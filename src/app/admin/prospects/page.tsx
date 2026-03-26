@@ -284,8 +284,8 @@ export default function ProspectsPage() {
               <h2 className="text-sm font-semibold">Discover Businesses</h2>
             </div>
             <div className="flex items-end gap-3">
-              <div className="w-44 space-y-1.5">
-                <Label className="text-xs text-muted-foreground">
+              <div className="w-40">
+                <Label className="mb-1.5 block text-xs text-muted-foreground">
                   Vertical
                 </Label>
                 <select
@@ -301,10 +301,10 @@ export default function ProspectsPage() {
                   <option value="plumber">Plumbers</option>
                 </select>
               </div>
-              <div className="min-w-0 flex-1 space-y-1.5">
+              <div className="min-w-0 flex-1">
                 <Label
                   htmlFor="discover-city"
-                  className="text-xs text-muted-foreground"
+                  className="mb-1.5 block text-xs text-muted-foreground"
                 >
                   City
                 </Label>
@@ -330,10 +330,10 @@ export default function ProspectsPage() {
                   ))}
                 </datalist>
               </div>
-              <div className="w-20 space-y-1.5">
+              <div className="w-20">
                 <Label
                   htmlFor="discover-limit"
-                  className="text-xs text-muted-foreground"
+                  className="mb-1.5 block text-xs text-muted-foreground"
                 >
                   Limit
                 </Label>
