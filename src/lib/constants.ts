@@ -31,3 +31,22 @@ export const USER_AGENT =
 
 export const BROWSER_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+
+export const CAMPAIGN_STATUS = {
+  DRAFT: "draft",
+  ACTIVE: "active",
+  PAUSED: "paused",
+  COMPLETED: "completed",
+} as const;
+
+export type CampaignStatus =
+  (typeof CAMPAIGN_STATUS)[keyof typeof CAMPAIGN_STATUS];
+
+export const WARMUP_SCHEDULE: Record<number, number> = {
+  1: 5, 2: 5, 3: 5,
+  4: 15, 5: 15, 6: 15, 7: 15,
+  8: 30, 9: 30, 10: 30, 11: 30, 12: 30, 13: 30, 14: 30,
+};
+export const WARMUP_DEFAULT_LIMIT = 50;
+
+export const EMAILS_PER_CRON_RUN = 5;
