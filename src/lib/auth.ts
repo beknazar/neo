@@ -5,7 +5,12 @@ import { APP_URL } from "@/lib/constants";
 export const auth = betterAuth({
   database: getPool(),
   baseURL: process.env.BETTER_AUTH_URL || APP_URL,
-  trustedOrigins: [APP_URL],
+  trustedOrigins: [
+    APP_URL,
+    ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : []),
+    ...(process.env.VERCEL_BRANCH_URL ? [`https://${process.env.VERCEL_BRANCH_URL}`] : []),
+    ...(process.env.VERCEL_PROJECT_PRODUCTION_URL ? [`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`] : []),
+  ],
   emailAndPassword: {
     enabled: true,
   },
