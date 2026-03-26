@@ -120,10 +120,10 @@ export default function DashboardPage() {
   const [activeReport, setActiveReport] = useState<
     (NeoReport & { id: string }) | null
   >(null);
-  const [loadingReport, setLoadingReport] = useState(false);
+  const [loadingReportId, setLoadingReportId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (session) {
+    if (session?.user?.id) {
       fetch("/api/reports")
         .then((r) => r.json())
         .then((data) => {
@@ -131,7 +131,7 @@ export default function DashboardPage() {
         })
         .catch(() => {});
     }
-  }, [session]);
+  }, [session?.user?.id]);
 
   if (isPending) {
     return <DashboardSkeleton />;
@@ -141,9 +141,6 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* ----------------------------------------------------------------- */}
-      {/* Header                                                            */}
-      {/* ----------------------------------------------------------------- */}
       <header className="border-b border-border/50 bg-neo-surface/50 backdrop-blur-sm">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <NeoLogo size="xl" />
@@ -167,9 +164,6 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* ----------------------------------------------------------------- */}
-      {/* Main content                                                      */}
-      {/* ----------------------------------------------------------------- */}
       <main className="mx-auto max-w-5xl px-6 py-8">
         {activeReport ? (
           <div className="space-y-8">
@@ -197,7 +191,7 @@ export default function DashboardPage() {
                 </p>
               </div>
               <Link href="/">
-                <Button className="bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5">
+                <Button className="gap-1.5">
                   <Plus className="size-4" />
                   New Scan
                 </Button>
@@ -213,9 +207,9 @@ export default function DashboardPage() {
                   <ReportCard
                     key={r.id}
                     report={r}
-                    loading={loadingReport}
+                    loading={loadingReportId === r.id}
                     onClick={async () => {
-                      setLoadingReport(true);
+                      setLoadingReportId(r.id);
                       try {
                         const res = await fetch(`/api/reports/${r.id}`);
                         const data = await res.json();
@@ -223,7 +217,7 @@ export default function DashboardPage() {
                           setActiveReport({ ...data.report_data, id: data.id });
                         }
                       } finally {
-                        setLoadingReport(false);
+                        setLoadingReportId(null);
                       }
                     }}
                   />
@@ -256,7 +250,7 @@ function EmptyState() {
           AI search engines.
         </p>
         <Link href="/" className="mt-6">
-          <Button className="bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5">
+          <Button className="gap-1.5">
             <Zap className="size-4" />
             Run your first scan
           </Button>

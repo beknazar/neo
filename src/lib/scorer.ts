@@ -163,18 +163,31 @@ function extractDomain(url: string): string {
  */
 function extractBusinessNames(response: string): string[] {
   const names: string[] = [];
-  // Look for bold text patterns (**Name**) common in AI responses
   const boldPattern = /\*\*([^*]+)\*\*/g;
   let match;
+
+  const GENERIC_PATTERNS = /^(note|tip|warning|important|best|top|here|why|how|what|where|when|the|a |an |key |our |their |your |visit |check |see |read |learn |about |try |book |schedule |call |get |find |explore |discover )/i;
+
+  const SECTION_HEADERS = new Set([
+    "location", "website", "services", "features", "key features",
+    "pricing", "pros", "cons", "hours", "phone", "contact", "overview",
+    "summary", "reviews", "ratings", "about", "description", "details",
+    "benefits", "treatments", "conclusion", "recommendations", "cost",
+    "price", "faq", "directions", "address", "menu", "gallery", "team",
+    "staff", "results", "specials", "offers", "deals", "packages",
+    "what to expect", "why choose", "how it works", "before and after",
+    "treatment options", "our services", "service area", "areas served",
+  ]);
+
   while ((match = boldPattern.exec(response)) !== null) {
     const name = match[1].trim();
-    // Filter out common non-business patterns
     if (
       name.length > 2 &&
       name.length < 60 &&
-      !name.match(
-        /^(note|tip|warning|important|best|top|here|why|how|what|the|a |an )/i
-      )
+      !GENERIC_PATTERNS.test(name) &&
+      !SECTION_HEADERS.has(name.toLowerCase()) &&
+      /[A-Z]/.test(name) &&
+      name.split(/\s+/).length <= 6
     ) {
       names.push(name);
     }

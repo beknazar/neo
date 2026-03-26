@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Mail, Lock, User, ArrowRight } from "lucide-react";
@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { GoogleSignInButton } from "@/components/google-sign-in-button";
 import { OrDivider } from "@/components/or-divider";
 import { NeoLogo } from "@/components/neo-logo";
-import { FREE_SLOTS } from "@/lib/constants";
+import { SCARCITY_MIN } from "@/lib/constants";
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -28,14 +28,11 @@ export default function SignUpPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [slotsLeft, setSlotsLeft] = useState(FREE_SLOTS);
-
-  useEffect(() => {
-    fetch("/api/slots")
-      .then((r) => r.json())
-      .then((d) => setSlotsLeft(Math.max(0, FREE_SLOTS - (d.count || 0))))
-      .catch(() => {});
-  }, []);
+  const [slotsLeft] = useState(() => {
+    // Deterministic daily rotation for consistency within the same day
+    const day = Math.floor(Date.now() / 86400000);
+    return (day % 7) + SCARCITY_MIN; // 2-8
+  });
 
   async function handleSignUp(e: React.FormEvent) {
     e.preventDefault();
@@ -72,7 +69,7 @@ export default function SignUpPage() {
             {slotsLeft > 0 && (
               <div className="mt-2 flex justify-center">
                 <Badge variant="secondary">
-                  {slotsLeft} of {FREE_SLOTS} free spots left
+                  Only {slotsLeft} free spots left
                 </Badge>
               </div>
             )}

@@ -1,4 +1,5 @@
 import { Pool } from "pg";
+import { FULL_QUERY_COUNT } from "@/lib/constants";
 
 let pool: Pool | null = null;
 
@@ -41,6 +42,12 @@ export async function initDb() {
   `).catch(() => {});
 }
 
+let _dbInitPromise: Promise<void> | null = null;
+export function ensureDb() {
+  if (!_dbInitPromise) _dbInitPromise = initDb();
+  return _dbInitPromise;
+}
+
 export async function saveReport(report: {
   businessName: string;
   businessUrl: string;
@@ -69,7 +76,7 @@ export async function saveReport(report: {
       JSON.stringify(report.reportData),
       report.userId || null,
       report.slug || null,
-      report.queryCount ?? 25,
+      report.queryCount ?? FULL_QUERY_COUNT,
     ]
   );
   return result.rows[0].id as string;

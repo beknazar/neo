@@ -1,10 +1,10 @@
-import { getReport, getReportBySlug, getTotalUsers } from "@/lib/db";
+import { getReport, getReportBySlug } from "@/lib/db";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { NeoLogo } from "@/components/neo-logo";
-import { FREE_SLOTS } from "@/lib/constants";
+import { SCARCITY_MIN } from "@/lib/constants";
 import { type Grade, scoreGrade, gradeClass, gradeBorderClass, formatDate } from "@/lib/scoring";
 import type { Metadata } from "next";
 import {
@@ -56,15 +56,13 @@ export default async function ReportPage({ params }: PageProps) {
   const { slug } = await params;
 
   // Try slug first, fall back to UUID for old links
-  const [slugRow, totalUsers] = await Promise.all([
-    getReportBySlug(slug),
-    getTotalUsers(),
-  ]);
+  const slugRow = await getReportBySlug(slug);
   const row = slugRow ?? (await getReport(slug));
   if (!row) notFound();
 
   const report = row.report_data;
-  const slotsLeft = Math.max(0, FREE_SLOTS - totalUsers);
+  const day = Math.floor(Date.now() / 86400000);
+  const slotsLeft = (day % 7) + SCARCITY_MIN;
   const fixCount = report.fixes?.length || 0;
 
   return (
@@ -244,7 +242,7 @@ export default async function ReportPage({ params }: PageProps) {
                 </Link>
                 {slotsLeft > 0 && (
                   <p className="mt-3 text-xs text-muted-foreground">
-                    {slotsLeft} of {FREE_SLOTS} free slots remaining
+                    Only {slotsLeft} free slots remaining
                   </p>
                 )}
               </div>

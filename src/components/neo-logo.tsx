@@ -19,8 +19,6 @@ export function NeoLogo({
   if (!linked) return mark;
 
   return (
-    <Link href="/" className="flex items-center gap-2">
-      {mark}
-    </Link>
+    <Link href="/">{mark}</Link>
   );
 }

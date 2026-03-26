@@ -84,6 +84,8 @@ function parseHtml(html: string): ExtractedInfo {
     }
   }
 
+  if (businessName && city && description) return { businessName, city, description };
+
   // 2. Try Open Graph tags
   if (!businessName) {
     const ogTitle = html.match(

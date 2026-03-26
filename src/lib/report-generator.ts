@@ -139,5 +139,6 @@ function generateSummary(
   else if (score >= 10) grade = "Weak";
   else grade = "Invisible";
 
-  return `${report.businessName} has a ${grade.toLowerCase()} AI visibility score of ${score}/100 in ${report.city}. You appear in ${strengths} out of 25 query categories and are invisible in ${gaps}. Your share of voice is ${report.shareOfVoice}% compared to competitors. There are ${highPriorityFixes} high-priority fixes that could significantly improve your AI search presence.`;
+  const totalQueries = strengths + gaps;
+  return `${report.businessName} has a ${grade.toLowerCase()} AI visibility score of ${score}/100 in ${report.city}. You appear in ${strengths} out of ${totalQueries} query categories and are invisible in ${gaps}. Your share of voice is ${report.shareOfVoice}% compared to competitors. There are ${highPriorityFixes} high-priority fixes that could significantly improve your AI search presence.`;
 }

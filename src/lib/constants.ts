@@ -1,4 +1,6 @@
 export const FREE_SLOTS = 30;
+export const SCARCITY_MIN = 2;
+export const SCARCITY_MAX = 8;
 export const FREE_QUERY_COUNT = 10;
 export const FREE_RUNS_PER_QUERY = 2;
 export const FULL_QUERY_COUNT = 25;

@@ -167,7 +167,6 @@ export default function Home() {
       );
     }
 
-    // idle and error states share the same single URL input form
     return (
       <div className="space-y-5">
         <div className="space-y-1.5">
@@ -251,10 +250,10 @@ export default function Home() {
 
                     <div className="space-y-1 text-center">
                       <p className="text-sm font-medium text-foreground">
-                        Scanning AI search engines
+                        Querying AI search engines...
                       </p>
                       <p className="font-mono text-xs text-muted-foreground">
-                        Scanning {queryCount} queries across AI search engines
+                        Checking visibility across multiple platforms
                       </p>
                     </div>
 
@@ -266,7 +265,7 @@ export default function Home() {
                           {progress}% complete
                         </span>
                         <span className="font-mono text-[11px] text-muted-foreground">
-                          {queryCount === 10 ? "~1-3" : "~2-5"} min
+                          ~2-5 min
                         </span>
                       </div>
                     </div>
@@ -299,13 +298,13 @@ export default function Home() {
                 </div>
 
                 <h1 className="text-balance text-4xl font-semibold leading-[1.1] tracking-tight text-foreground lg:text-[2.75rem]">
-                  Measure your visibility
+                  Are you visible in
                   <br />
-                  in AI search engines
+                  ChatGPT, Perplexity &amp; Gemini?
                 </h1>
 
                 <p className="mt-5 max-w-md text-[15px] leading-relaxed text-muted-foreground">
-                  When patients ask AI search engines for med spa
+                  When patients ask ChatGPT, Perplexity, or Gemini for med spa
                   recommendations, does your business appear? Neo scans the
                   engines that matter and tells you exactly where you stand.
                 </p>
@@ -316,7 +315,7 @@ export default function Home() {
                       <Search className="size-3 text-primary" />
                     </div>
                     <span>
-                      10 real queries across AI search platforms — free
+                      Real queries across AI search platforms — free
                     </span>
                   </div>
                   <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
@@ -353,7 +352,7 @@ export default function Home() {
       <footer className="border-t border-border/30 px-6 py-5">
         <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 sm:flex-row">
           <p className="font-mono text-[11px] text-muted-foreground/50">
-            Scanning across leading AI search engines.
+            Currently scanning: Perplexity AI. ChatGPT &amp; Gemini coming soon.
           </p>
           <p className="font-mono text-[11px] text-muted-foreground/40">
             Neo {CURRENT_YEAR}

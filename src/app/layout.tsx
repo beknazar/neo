@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Neo — AI Visibility Intelligence for Med Spas",
   description:
-    "See where your med spa ranks across AI search engines. Get specific, actionable fixes to improve your visibility across AI search engines.",
+    "See where your med spa ranks in ChatGPT, Perplexity, and Gemini. Get specific, actionable fixes to improve your AI search visibility.",
   icons: {
     icon: "/favicon.svg",
   },

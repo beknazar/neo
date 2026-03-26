@@ -47,25 +47,11 @@ interface Prospect {
 
 type DiscoverStatus = "idle" | "discovering" | "done" | "error";
 
-const STATUS_COLORS: Record<string, string> = {
-  [PROSPECT_STATUS.DISCOVERED]: "bg-muted text-muted-foreground",
-  [PROSPECT_STATUS.SCANNED]: "bg-primary/10 text-primary",
-  [PROSPECT_STATUS.EMAILED]: "bg-neo-amber/15 text-neo-amber",
-  [PROSPECT_STATUS.SIGNED_UP]: "bg-primary/15 text-primary font-semibold",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  [PROSPECT_STATUS.DISCOVERED]: "Discovered",
-  [PROSPECT_STATUS.SCANNED]: "Scanned",
-  [PROSPECT_STATUS.EMAILED]: "Emailed",
-  [PROSPECT_STATUS.SIGNED_UP]: "Signed Up",
-};
-
-const STATUS_DOT_COLORS: Record<string, string> = {
-  [PROSPECT_STATUS.DISCOVERED]: "bg-muted-foreground",
-  [PROSPECT_STATUS.SCANNED]: "bg-primary",
-  [PROSPECT_STATUS.EMAILED]: "bg-neo-amber",
-  [PROSPECT_STATUS.SIGNED_UP]: "bg-primary",
+const STATUS_CONFIG: Record<string, { bg: string; dot: string; label: string }> = {
+  [PROSPECT_STATUS.DISCOVERED]: { bg: "bg-muted text-muted-foreground", dot: "bg-muted-foreground", label: "Discovered" },
+  [PROSPECT_STATUS.SCANNED]: { bg: "bg-primary/10 text-primary", dot: "bg-primary", label: "Scanned" },
+  [PROSPECT_STATUS.EMAILED]: { bg: "bg-neo-amber/15 text-neo-amber", dot: "bg-neo-amber", label: "Emailed" },
+  [PROSPECT_STATUS.SIGNED_UP]: { bg: "bg-primary/15 text-primary font-semibold", dot: "bg-primary", label: "Signed Up" },
 };
 
 function StarRating({ rating }: { rating: number }) {
@@ -122,10 +108,10 @@ export default function ProspectsPage() {
   const [emailError, setEmailError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (session) {
+    if (session?.user?.id) {
       fetchProspects();
     }
-  }, [session]);
+  }, [session?.user?.id]);
 
   async function fetchProspects() {
     try {
@@ -320,7 +306,6 @@ export default function ProspectsPage() {
               <Button
                 onClick={handleDiscover}
                 disabled={!city || discoverStatus === "discovering"}
-                className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {discoverStatus === "discovering" ? (
                   <>
@@ -397,10 +382,10 @@ export default function ProspectsPage() {
                   >
                     <span
                       className={`inline-block size-1.5 rounded-full ${
-                        STATUS_DOT_COLORS[status] || STATUS_DOT_COLORS[PROSPECT_STATUS.DISCOVERED]
+                        STATUS_CONFIG[status]?.dot || STATUS_CONFIG[PROSPECT_STATUS.DISCOVERED].dot
                       }`}
                     />
-                    {count} {STATUS_LABELS[status] || status}
+                    {count} {STATUS_CONFIG[status]?.label || status}
                   </span>
                 ))}
               </div>
@@ -442,10 +427,10 @@ export default function ProspectsPage() {
                       </h3>
                       <Badge
                         className={`shrink-0 border-0 ${
-                          STATUS_COLORS[p.status] || STATUS_COLORS[PROSPECT_STATUS.DISCOVERED]
+                          STATUS_CONFIG[p.status]?.bg || STATUS_CONFIG[PROSPECT_STATUS.DISCOVERED].bg
                         }`}
                       >
-                        {STATUS_LABELS[p.status] || p.status}
+                        {STATUS_CONFIG[p.status]?.label || p.status}
                       </Badge>
                     </div>
 

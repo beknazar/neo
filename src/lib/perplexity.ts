@@ -12,12 +12,16 @@ export interface QueryResult {
   timestamp: number;
 }
 
+export interface QueryResultWithMeta extends QueryResult {
+  fromCache?: boolean;
+}
+
 const PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions";
 
 export async function queryPerplexity(
   query: string,
   runIndex: number
-): Promise<QueryResult> {
+): Promise<QueryResultWithMeta> {
   const apiKey = process.env.PERPLEXITY_API_KEY;
   if (!apiKey) throw new Error("PERPLEXITY_API_KEY is not set");
 
@@ -25,7 +29,7 @@ export async function queryPerplexity(
   const key = cacheKey(query);
   const cached = await getCachedResponse(key);
   if (cached) {
-    return { query, response: cached, runIndex, timestamp: Date.now() };
+    return { query, response: cached, runIndex, timestamp: Date.now(), fromCache: true };
   }
 
   const res = await fetch(PERPLEXITY_API_URL, {
@@ -93,14 +97,16 @@ export async function runQueryBatch(
       try {
         const result = await queryPerplexity(task.query, task.runIndex);
         results.push(result);
+        // Only pace API calls, not cache hits
+        if (!result.fromCache) {
+          await new Promise((r) => setTimeout(r, 500));
+        }
       } catch (err) {
         console.error(
           `Query failed: "${task.query}" run ${task.runIndex}:`,
           err
         );
       }
-      // Pacing: 500ms between requests per worker
-      await new Promise((r) => setTimeout(r, 500));
     }
   }
 
