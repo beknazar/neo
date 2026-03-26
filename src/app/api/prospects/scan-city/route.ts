@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { discoverMedSpas, findEmailFromWebsite } from "@/lib/prospects";
+import { discoverBusinesses, findEmailFromWebsite } from "@/lib/prospects";
 import { saveProspect } from "@/lib/db";
 
 export const maxDuration = 300;
@@ -7,7 +7,7 @@ export const maxDuration = 300;
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { city, limit } = body;
+    const { city, limit, vertical } = body;
 
     if (!city) {
       return NextResponse.json(
@@ -16,8 +16,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 1. Discover med spas via Apify
-    const discovered = await discoverMedSpas(city, limit || 10);
+    const discovered = await discoverBusinesses(city, vertical || "med spa", limit || 10);
 
     // 2. Find emails in parallel batches, then save once per prospect
     const CONCURRENCY = 5;

@@ -54,20 +54,22 @@ function getApifyToken(): string {
  * Discover med spas in a city using Apify Google Maps Scraper.
  * Starts an actor run, polls until complete, then fetches results.
  */
-export async function discoverMedSpas(
+export async function discoverBusinesses(
   city: string,
+  vertical: string = "med spa",
   limit: number = 20
 ): Promise<DiscoveredMedSpa[]> {
   const token = getApifyToken();
 
   // 1. Start the actor run
+  const searchQuery = `${vertical} in ${city}`;
   const runRes = await fetch(
     `${APIFY_BASE_URL}/acts/${APIFY_ACTOR_ID}/runs?token=${token}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        searchStringsArray: [`med spa in ${city}`],
+        searchStringsArray: [searchQuery],
         maxCrawledPlacesPerSearch: limit,
       }),
     }

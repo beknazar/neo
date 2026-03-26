@@ -100,6 +100,7 @@ export default function ProspectsPage() {
   const { session, isPending } = useRequireAuth();
 
   const [city, setCity] = useState("");
+  const [vertical, setVertical] = useState("med spa");
   const [limit, setLimit] = useState(10);
   const [discoverStatus, setDiscoverStatus] = useState<DiscoverStatus>("idle");
   const [discoverError, setDiscoverError] = useState("");
@@ -135,7 +136,7 @@ export default function ProspectsPage() {
       const res = await fetch("/api/prospects/scan-city", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ city, limit }),
+        body: JSON.stringify({ city, limit, vertical }),
       });
 
       if (!res.ok) {
@@ -261,9 +262,26 @@ export default function ProspectsPage() {
           <CardContent className="pt-5 pb-5">
             <div className="mb-4 flex items-center gap-2">
               <Search className="size-4 text-primary" />
-              <h2 className="text-sm font-semibold">Discover Med Spas</h2>
+              <h2 className="text-sm font-semibold">Discover Businesses</h2>
             </div>
             <div className="flex items-end gap-3">
+              <div className="w-44 space-y-1.5">
+                <Label className="text-xs text-muted-foreground">
+                  Vertical
+                </Label>
+                <select
+                  value={vertical}
+                  onChange={(e) => setVertical(e.target.value)}
+                  className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                >
+                  <option value="med spa">Med Spas</option>
+                  <option value="dentist">Dentists</option>
+                  <option value="personal injury lawyer">PI Lawyers</option>
+                  <option value="real estate agent">Real Estate</option>
+                  <option value="plastic surgeon">Plastic Surgeons</option>
+                  <option value="plumber">Plumbers</option>
+                </select>
+              </div>
               <div className="min-w-0 flex-1 space-y-1.5">
                 <Label
                   htmlFor="discover-city"
