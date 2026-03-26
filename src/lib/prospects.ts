@@ -5,7 +5,7 @@
  */
 
 import { promises as dns } from "dns";
-import { USER_AGENT } from "@/lib/constants";
+import { USER_AGENT, BROWSER_USER_AGENT } from "@/lib/constants";
 
 // --- Types ---
 
@@ -50,6 +50,7 @@ class ApifyTokensExhaustedError extends Error {
 
 const APIFY_ACTOR_ID = "nwua9Gu5YrADL7ZDj";
 const APIFY_BASE_URL = "https://api.apify.com/v2";
+const APIFY_TERMINAL_FAILURES = new Set(["FAILED", "ABORTED", "TIMED-OUT"]);
 
 // --- Token Management (state machine with monthly reset) ---
 
@@ -211,7 +212,7 @@ async function pollRunCompletion(
     const status = data.data.status;
 
     if (status === "SUCCEEDED") return;
-    if (status === "FAILED" || status === "ABORTED" || status === "TIMED-OUT") {
+    if (APIFY_TERMINAL_FAILURES.has(status)) {
       throw new Error(`Apify run ended with status: ${status}`);
     }
 
@@ -222,9 +223,6 @@ async function pollRunCompletion(
 }
 
 // --- Discovery: Free Fallback (YellowPages + DuckDuckGo) ---
-
-const BROWSER_UA =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
 const SKIP_DOMAINS = new Set([
   "yelp.com", "yellowpages.com", "facebook.com", "instagram.com",
@@ -237,31 +235,17 @@ const SKIP_DOMAINS = new Set([
 
 function shouldSkipUrl(url: string): boolean {
   try {
-    const hostname = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
-    for (const d of SKIP_DOMAINS) {
-      if (hostname === d || hostname.endsWith(`.${d}`)) return true;
+    let hostname = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+    if (SKIP_DOMAINS.has(hostname)) return true;
+    let dot = hostname.indexOf(".");
+    while (dot !== -1) {
+      hostname = hostname.slice(dot + 1);
+      if (SKIP_DOMAINS.has(hostname)) return true;
+      dot = hostname.indexOf(".");
     }
     return false;
   } catch {
     return true;
-  }
-}
-
-async function fetchPage(url: string): Promise<string | null> {
-  try {
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": BROWSER_UA,
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-      signal: AbortSignal.timeout(15_000),
-      redirect: "follow",
-    });
-    if (!res.ok) return null;
-    return await res.text();
-  } catch {
-    return null;
   }
 }
 
@@ -317,7 +301,7 @@ async function scrapeYellowPages(
   city: string
 ): Promise<DiscoveredBusiness[]> {
   const url = `https://www.yellowpages.com/search?search_terms=${encodeURIComponent(vertical)}&geo_location_terms=${encodeURIComponent(city)}`;
-  const html = await fetchPage(url);
+  const html = await fetchHtml(url, { browser: true, timeoutMs: 15_000 });
   if (!html) return [];
 
   const businesses: DiscoveredBusiness[] = [];
@@ -371,7 +355,7 @@ async function scrapeDuckDuckGo(
 ): Promise<DiscoveredBusiness[]> {
   const query = encodeURIComponent(`${vertical} in ${city}`);
   const url = `https://html.duckduckgo.com/html/?q=${query}`;
-  const html = await fetchPage(url);
+  const html = await fetchHtml(url, { browser: true, timeoutMs: 15_000 });
   if (!html) return [];
 
   const businesses: DiscoveredBusiness[] = [];
@@ -508,11 +492,21 @@ function isLikelyRealEmail(email: string): boolean {
   return true;
 }
 
-async function safeFetch(url: string): Promise<string | null> {
+async function fetchHtml(
+  url: string,
+  opts?: { browser?: boolean; timeoutMs?: number }
+): Promise<string | null> {
   try {
+    const headers: Record<string, string> = {
+      "User-Agent": opts?.browser ? BROWSER_USER_AGENT : USER_AGENT,
+    };
+    if (opts?.browser) {
+      headers.Accept = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+      headers["Accept-Language"] = "en-US,en;q=0.9";
+    }
     const res = await fetch(url, {
-      headers: { "User-Agent": USER_AGENT },
-      signal: AbortSignal.timeout(10_000),
+      headers,
+      signal: AbortSignal.timeout(opts?.timeoutMs ?? 10_000),
       redirect: "follow",
     });
     if (!res.ok) return null;
@@ -537,7 +531,7 @@ export async function findEmailFromWebsite(
   const allEmails: string[] = [];
 
   const pages = await Promise.all(
-    pagePaths.map((path) => safeFetch(`${base}${path}`))
+    pagePaths.map((path) => fetchHtml(`${base}${path}`))
   );
 
   for (const html of pages) {

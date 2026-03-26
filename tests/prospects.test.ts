@@ -190,9 +190,6 @@ describe("findEmailFromWebsite", () => {
   });
 });
 
-// API route behavior tests would require mocking Next.js request/response
-// objects and the database layer — skipped in favor of the browser QA tests.
-
 // ---------------------------------------------------------------------------
 // Token rotation logic
 // ---------------------------------------------------------------------------
