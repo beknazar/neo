@@ -222,7 +222,7 @@ export default function Home() {
                   </Button>
                 </Link>
                 <Link href="/sign-up">
-                  <Button size="sm">Get started</Button>
+                  <Button variant="outline" size="sm">Get started</Button>
                 </Link>
               </div>
             )}
