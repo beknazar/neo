@@ -39,6 +39,13 @@ interface ApifyDatasetItem {
   url?: string;
 }
 
+class ApifyTokensExhaustedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ApifyTokensExhaustedError";
+  }
+}
+
 // --- Apify Google Maps Scraper ---
 
 const APIFY_ACTOR_ID = "nwua9Gu5YrADL7ZDj";
@@ -82,7 +89,7 @@ function getApifyToken(): string {
   const available = getAvailableTokens();
   if (available.length === 0) {
     const total = APIFY_TOKEN_POOL.length || 1;
-    throw new Error(
+    throw new ApifyTokensExhaustedError(
       `All ${total} Apify tokens are exhausted this month. Tokens reset on the 1st.`
     );
   }
@@ -103,9 +110,8 @@ export async function discoverBusinesses(
   try {
     return await discoverBusinessesApify(city, vertical, limit);
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    if (msg.includes("tokens") && msg.includes("exhausted")) {
-      console.warn(`[discovery] ${msg}`);
+    if (error instanceof ApifyTokensExhaustedError) {
+      console.warn(`[discovery] ${error.message}`);
       return await discoverBusinessesFree(city, vertical, limit);
     }
     throw error;
@@ -178,7 +184,7 @@ async function discoverBusinessesApify(
       }));
   }
 
-  throw new Error(
+  throw new ApifyTokensExhaustedError(
     `All Apify tokens exhausted after ${maxRetries} attempts. ${exhaustedTokens.size} tokens hit their monthly limit. Tokens reset on the 1st.`
   );
 }

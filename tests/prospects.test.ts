@@ -190,28 +190,8 @@ describe("findEmailFromWebsite", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Prospect discovery integration (API route behavior)
-// ---------------------------------------------------------------------------
-describe("prospect API route behavior", () => {
-  it("scan-city endpoint requires a city parameter", async () => {
-    // Simulate what the route handler does with missing city
-    const body = { limit: 10 };
-    expect(body).not.toHaveProperty("city");
-  });
-
-  it("scan-city accepts vertical parameter", async () => {
-    const body = { city: "San Francisco", limit: 10, vertical: "dentist" };
-    expect(body.vertical).toBe("dentist");
-    expect(body.city).toBe("San Francisco");
-  });
-
-  it("defaults limit to 10 when not provided", async () => {
-    const body = { city: "San Francisco" };
-    const limit = (body as { limit?: number }).limit || 10;
-    expect(limit).toBe(10);
-  });
-});
+// API route behavior tests would require mocking Next.js request/response
+// objects and the database layer — skipped in favor of the browser QA tests.
 
 // ---------------------------------------------------------------------------
 // Token rotation logic
