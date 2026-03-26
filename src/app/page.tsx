@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,9 +16,13 @@ import {
   Activity,
   Radio,
   ChevronRight,
+  Loader2,
 } from "lucide-react";
+import { NeoLogo } from "@/components/neo-logo";
 
-type ScanStatus = "idle" | "scanning" | "done" | "error";
+type ScanStatus = "idle" | "extracting" | "confirming" | "scanning" | "error";
+
+const CURRENT_YEAR = new Date().getFullYear();
 
 export default function Home() {
   const router = useRouter();
@@ -29,6 +33,37 @@ export default function Home() {
   const [status, setStatus] = useState<ScanStatus>("idle");
   const [error, setError] = useState("");
   const [progress, setProgress] = useState(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const queryCount = session ? 25 : 10;
+
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, []);
+
+  async function handleExtract() {
+    if (!businessUrl) return;
+    setStatus("extracting");
+    setError("");
+    try {
+      const res = await fetch("/api/extract-info", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: businessUrl }),
+      });
+      if (!res.ok) throw new Error("Failed to analyze website");
+      const data = await res.json();
+      if (data.businessName) setBusinessName(data.businessName);
+      if (data.city) setCity(data.city);
+      if (data.url) setBusinessUrl(data.url);
+      setStatus("confirming");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to analyze website");
+      setStatus("error");
+    }
+  }
 
   async function handleScan() {
     if (!businessName || !businessUrl || !city) return;
@@ -37,9 +72,9 @@ export default function Home() {
     setError("");
     setProgress(0);
 
-    const interval = setInterval(() => {
-      setProgress((p) => Math.min(p + 2, 90));
-    }, 1000);
+    intervalRef.current = setInterval(() => {
+      setProgress((p) => Math.min(p + 1, 95));
+    }, 1500);
 
     try {
       const res = await fetch("/api/scan", {
@@ -48,7 +83,7 @@ export default function Home() {
         body: JSON.stringify({ businessName, businessUrl, city }),
       });
 
-      clearInterval(interval);
+      if (intervalRef.current) clearInterval(intervalRef.current);
 
       if (!res.ok) {
         const data = await res.json();
@@ -56,16 +91,114 @@ export default function Home() {
       }
 
       const data = await res.json();
-      setProgress(100);
-      setStatus("done");
-
-      // Redirect to public report page
-      router.push(`/report/${data.id}`);
+      router.push(`/report/${data.slug || data.id}`);
     } catch (err) {
-      clearInterval(interval);
+      if (intervalRef.current) clearInterval(intervalRef.current);
       setError(err instanceof Error ? err.message : "Something went wrong");
       setStatus("error");
     }
+  }
+
+  function renderFormContent() {
+    if (status === "extracting") {
+      return (
+        <div className="flex flex-col items-center gap-3 py-8">
+          <Loader2 className="size-5 animate-spin text-primary" />
+          <div className="text-center">
+            <p className="text-sm font-medium">Analyzing website...</p>
+            <p className="mt-1 font-mono text-xs text-muted-foreground">
+              {businessUrl}
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    if (status === "confirming") {
+      return (
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">
+              Business Name
+            </Label>
+            <Input
+              value={businessName}
+              onChange={(e) => setBusinessName(e.target.value)}
+              placeholder="Enter business name"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Website</Label>
+            <Input value={businessUrl} disabled className="opacity-60" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">City</Label>
+            <Input
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              placeholder="Enter city"
+            />
+            {!city && (
+              <p className="text-xs text-neo-amber">
+                Could not detect city — please enter manually
+              </p>
+            )}
+          </div>
+          <Button
+            onClick={handleScan}
+            disabled={!businessName || !businessUrl || !city}
+            className="w-full"
+            size="lg"
+          >
+            Run AI visibility scan
+            <ArrowRight className="ml-1 size-3.5" />
+          </Button>
+          <button
+            onClick={() => {
+              setStatus("idle");
+              setBusinessName("");
+              setCity("");
+            }}
+            className="w-full text-center text-xs text-muted-foreground hover:text-foreground"
+          >
+            &larr; Try a different URL
+          </button>
+        </div>
+      );
+    }
+
+    // idle and error states share the same single URL input form
+    return (
+      <div className="space-y-5">
+        <div className="space-y-1.5">
+          <Label htmlFor="url" className="text-xs text-muted-foreground">
+            Website URL
+          </Label>
+          <Input
+            id="url"
+            value={businessUrl}
+            onChange={(e) => setBusinessUrl(e.target.value)}
+            placeholder="glowmedspa.com"
+            onKeyDown={(e) => e.key === "Enter" && handleExtract()}
+          />
+        </div>
+        <Button
+          onClick={handleExtract}
+          disabled={!businessUrl}
+          className="w-full"
+          size="lg"
+        >
+          Analyze website
+          <ArrowRight className="ml-1 size-3.5" />
+        </Button>
+
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        <p className="text-center font-mono text-[11px] text-muted-foreground/60">
+          Free scan — results in under 5 minutes
+        </p>
+      </div>
+    );
   }
 
   return (
@@ -73,16 +206,7 @@ export default function Home() {
       {/* Header */}
       <header className="border-b border-border/50 px-6 py-3.5">
         <div className="mx-auto flex max-w-5xl items-center justify-between">
-          <Link href="/" className="flex items-center gap-2.5">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary">
-              <span className="text-xs font-bold tracking-tight text-primary-foreground">
-                N
-              </span>
-            </div>
-            <span className="text-sm font-semibold tracking-tight text-foreground">
-              Neo
-            </span>
-          </Link>
+          <NeoLogo />
           <nav className="flex items-center gap-2">
             {session ? (
               <Link href="/dashboard">
@@ -130,7 +254,7 @@ export default function Home() {
                         Scanning AI search engines
                       </p>
                       <p className="font-mono text-xs text-muted-foreground">
-                        25 queries x 3 runs across Perplexity
+                        Scanning {queryCount} queries across AI search engines
                       </p>
                     </div>
 
@@ -142,7 +266,7 @@ export default function Home() {
                           {progress}% complete
                         </span>
                         <span className="font-mono text-[11px] text-muted-foreground">
-                          ~2-5 min
+                          {queryCount === 10 ? "~1-3" : "~2-5"} min
                         </span>
                       </div>
                     </div>
@@ -162,7 +286,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* Input Form */}
+          {/* Input Form (idle, extracting, confirming, error) */}
           {status !== "scanning" && (
             <div className="grid gap-16 lg:grid-cols-[1fr_minmax(0,420px)] lg:items-start lg:gap-20">
               {/* Left: Hero copy */}
@@ -181,7 +305,7 @@ export default function Home() {
                 </h1>
 
                 <p className="mt-5 max-w-md text-[15px] leading-relaxed text-muted-foreground">
-                  When patients ask ChatGPT or Perplexity for med spa
+                  When patients ask AI search engines for med spa
                   recommendations, does your business appear? Neo scans the
                   engines that matter and tells you exactly where you stand.
                 </p>
@@ -192,7 +316,7 @@ export default function Home() {
                       <Search className="size-3 text-primary" />
                     </div>
                     <span>
-                      25 real queries across AI search platforms
+                      10 real queries across AI search platforms — free
                     </span>
                   </div>
                   <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
@@ -207,9 +331,7 @@ export default function Home() {
                     <div className="flex h-5 w-5 items-center justify-center rounded bg-neo-teal-muted">
                       <ArrowRight className="size-3 text-primary" />
                     </div>
-                    <span>
-                      Actionable fixes ranked by impact
-                    </span>
+                    <span>Actionable fixes ranked by impact</span>
                   </div>
                 </div>
               </div>
@@ -217,61 +339,8 @@ export default function Home() {
               {/* Right: Scan form */}
               <div className="w-full">
                 <Card>
-                  <CardContent className="space-y-5 pt-2">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="name" className="text-xs text-muted-foreground">
-                        Business Name
-                      </Label>
-                      <Input
-                        id="name"
-                        value={businessName}
-                        onChange={(e) => setBusinessName(e.target.value)}
-                        placeholder="Glow Med Spa"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-[1fr_140px] gap-3">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="url" className="text-xs text-muted-foreground">
-                          Website
-                        </Label>
-                        <Input
-                          id="url"
-                          value={businessUrl}
-                          onChange={(e) => setBusinessUrl(e.target.value)}
-                          placeholder="glowmedspa.com"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="city" className="text-xs text-muted-foreground">
-                          City
-                        </Label>
-                        <Input
-                          id="city"
-                          value={city}
-                          onChange={(e) => setCity(e.target.value)}
-                          placeholder="Los Angeles"
-                        />
-                      </div>
-                    </div>
-
-                    <Button
-                      onClick={handleScan}
-                      disabled={!businessName || !businessUrl || !city}
-                      className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-                      size="lg"
-                    >
-                      Run AI visibility scan
-                      <ArrowRight className="ml-1 size-3.5" />
-                    </Button>
-
-                    {error && (
-                      <p className="text-sm text-destructive">{error}</p>
-                    )}
-
-                    <p className="text-center font-mono text-[11px] text-muted-foreground/60">
-                      Free scan — results in under 5 minutes
-                    </p>
+                  <CardContent className="pt-2">
+                    {renderFormContent()}
                   </CardContent>
                 </Card>
               </div>
@@ -284,10 +353,10 @@ export default function Home() {
       <footer className="border-t border-border/30 px-6 py-5">
         <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 sm:flex-row">
           <p className="font-mono text-[11px] text-muted-foreground/50">
-            Currently scanning: Perplexity AI. ChatGPT and Gemini coming soon.
+            Scanning across leading AI search engines.
           </p>
           <p className="font-mono text-[11px] text-muted-foreground/40">
-            Neo {new Date().getFullYear()}
+            Neo {CURRENT_YEAR}
           </p>
         </div>
       </footer>

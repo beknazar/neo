@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
+import { useRequireAuth } from "@/hooks/use-require-auth";
+import { scoreGrade, gradeClass, gradeBorderClass, formatDate, type Grade } from "@/lib/scoring";
+import { NeoLogo } from "@/components/neo-logo";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,47 +27,10 @@ import {
 } from "lucide-react";
 import type { NeoReport } from "@/lib/report-generator";
 
-// ---------------------------------------------------------------------------
-// Score grading utility
-// ---------------------------------------------------------------------------
-
-type Grade = "good" | "warn" | "bad";
-
-function scoreGrade(score: number, thresholds: [number, number] = [30, 10]): Grade {
-  if (score >= thresholds[0]) return "good";
-  if (score >= thresholds[1]) return "warn";
-  return "bad";
-}
-
-function gradeClass(grade: Grade): string {
-  return grade === "good"
-    ? "score-good"
-    : grade === "warn"
-      ? "score-warn"
-      : "score-bad";
-}
-
-function gradeBorderClass(grade: Grade): string {
-  return grade === "good"
-    ? "border-t-neo-teal"
-    : grade === "warn"
-      ? "border-t-neo-amber"
-      : "border-t-neo-coral";
-}
-
 function priorityVariant(priority: string): "destructive" | "secondary" | "outline" {
   if (priority === "high") return "destructive";
   if (priority === "medium") return "secondary";
   return "outline";
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -138,14 +104,16 @@ function DashboardSkeleton() {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { data: session, isPending } = authClient.useSession();
+  const { session, isPending } = useRequireAuth();
   const [reports, setReports] = useState<
     Array<{
       id: string;
+      slug: string | null;
       business_name: string;
       city: string;
       recommendation_score: number;
       share_of_voice: number;
+      query_count: number | null;
       created_at: string;
     }>
   >([]);
@@ -153,12 +121,6 @@ export default function DashboardPage() {
     (NeoReport & { id: string }) | null
   >(null);
   const [loadingReport, setLoadingReport] = useState(false);
-
-  useEffect(() => {
-    if (!isPending && !session) {
-      router.push("/sign-in");
-    }
-  }, [session, isPending, router]);
 
   useEffect(() => {
     if (session) {
@@ -171,12 +133,10 @@ export default function DashboardPage() {
     }
   }, [session]);
 
-  // --- Loading state ---
   if (isPending) {
     return <DashboardSkeleton />;
   }
 
-  // --- Not authenticated ---
   if (!session) return null;
 
   return (
@@ -186,11 +146,7 @@ export default function DashboardPage() {
       {/* ----------------------------------------------------------------- */}
       <header className="border-b border-border/50 bg-neo-surface/50 backdrop-blur-sm">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-          <Link href="/" className="flex items-center">
-            <span className="text-xl font-semibold tracking-tight text-primary">
-              neo
-            </span>
-          </Link>
+          <NeoLogo size="xl" />
           <div className="flex items-center gap-4">
             <span className="hidden text-sm text-muted-foreground font-mono sm:inline-block">
               {session.user.email}
@@ -297,7 +253,7 @@ function EmptyState() {
         </h2>
         <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
           Run your first AI visibility scan to see how your med spa appears in
-          AI search engines like ChatGPT and Perplexity.
+          AI search engines.
         </p>
         <Link href="/" className="mt-6">
           <Button className="bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5">
@@ -321,10 +277,12 @@ function ReportCard({
 }: {
   report: {
     id: string;
+    slug: string | null;
     business_name: string;
     city: string;
     recommendation_score: number;
     share_of_voice: number;
+    query_count: number | null;
     created_at: string;
   };
   loading: boolean;
@@ -498,16 +456,7 @@ function FullReport({ report }: { report: NeoReport & { id: string } }) {
             </Badge>
           </div>
           <div className="space-y-3">
-            {report.fixes.map(
-              (
-                fix: {
-                  priority: string;
-                  category: string;
-                  title: string;
-                  description: string;
-                },
-                i: number
-              ) => (
+            {report.fixes.map((fix, i) => (
                 <Card key={i} className="bg-neo-surface/40">
                   <CardContent className="py-4">
                     <div className="mb-2.5 flex flex-wrap items-center gap-2">

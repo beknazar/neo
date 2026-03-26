@@ -1,4 +1,8 @@
 export const FREE_SLOTS = 30;
+export const FREE_QUERY_COUNT = 10;
+export const FREE_RUNS_PER_QUERY = 2;
+export const FULL_QUERY_COUNT = 25;
+export const FULL_RUNS_PER_QUERY = 3;
 
 export const PROSPECT_STATUS = {
   DISCOVERED: "discovered",
@@ -12,9 +16,9 @@ export type ProspectStatus =
 
 export const APP_URL =
   process.env.NEXT_PUBLIC_APP_URL ||
-  process.env.VERCEL_URL
+  (process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
-    : "http://localhost:3000";
+    : "http://localhost:3000");
 
 export const USER_AGENT =
   "Mozilla/5.0 (compatible; NeoBot/1.0)";

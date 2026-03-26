@@ -161,3 +161,14 @@
 .score-good { color: var(--neo-teal); }
 .score-warn { color: var(--neo-amber); }
 .score-bad { color: var(--neo-coral); }
+
+@layer base {
+  html {
+    font-size: 17px;
+  }
+  @media (max-width: 640px) {
+    html {
+      font-size: 16px;
+    }
+  }
+}

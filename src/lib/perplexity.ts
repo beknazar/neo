@@ -1,7 +1,9 @@
 /**
- * Perplexity API client for querying AI search.
+ * AI search API client. Uses Perplexity under the hood.
  * Runs each query and returns raw text responses.
  */
+
+import { cacheKey, getCachedResponse, setCachedResponse } from "./query-cache";
 
 export interface QueryResult {
   query: string;
@@ -18,6 +20,13 @@ export async function queryPerplexity(
 ): Promise<QueryResult> {
   const apiKey = process.env.PERPLEXITY_API_KEY;
   if (!apiKey) throw new Error("PERPLEXITY_API_KEY is not set");
+
+  // Check cache first
+  const key = cacheKey(query);
+  const cached = await getCachedResponse(key);
+  if (cached) {
+    return { query, response: cached, runIndex, timestamp: Date.now() };
+  }
 
   const res = await fetch(PERPLEXITY_API_URL, {
     method: "POST",
@@ -46,6 +55,9 @@ export async function queryPerplexity(
 
   const data = await res.json();
   const response = data.choices?.[0]?.message?.content ?? "";
+
+  // Cache the response
+  await setCachedResponse(key, query, response);
 
   return {
     query,

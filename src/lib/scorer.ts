@@ -1,6 +1,6 @@
 /**
  * Scoring engine for Neo.
- * Analyzes Perplexity responses to compute recommendation scores.
+ * Analyzes AI search responses to compute recommendation scores.
  */
 
 import type { QueryResult } from "./perplexity";

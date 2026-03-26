@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
+import { useRequireAuth } from "@/hooks/use-require-auth";
+import { PROSPECT_STATUS, type ProspectStatus } from "@/lib/constants";
+import { scoreGrade, gradeClass } from "@/lib/scoring";
+import { NeoLogo } from "@/components/neo-logo";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,17 +48,24 @@ interface Prospect {
 type DiscoverStatus = "idle" | "discovering" | "done" | "error";
 
 const STATUS_COLORS: Record<string, string> = {
-  discovered: "bg-muted text-muted-foreground",
-  scanned: "bg-primary/10 text-primary",
-  emailed: "bg-neo-amber/15 text-neo-amber",
-  signed_up: "bg-primary/15 text-primary font-semibold",
+  [PROSPECT_STATUS.DISCOVERED]: "bg-muted text-muted-foreground",
+  [PROSPECT_STATUS.SCANNED]: "bg-primary/10 text-primary",
+  [PROSPECT_STATUS.EMAILED]: "bg-neo-amber/15 text-neo-amber",
+  [PROSPECT_STATUS.SIGNED_UP]: "bg-primary/15 text-primary font-semibold",
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  discovered: "Discovered",
-  scanned: "Scanned",
-  emailed: "Emailed",
-  signed_up: "Signed Up",
+  [PROSPECT_STATUS.DISCOVERED]: "Discovered",
+  [PROSPECT_STATUS.SCANNED]: "Scanned",
+  [PROSPECT_STATUS.EMAILED]: "Emailed",
+  [PROSPECT_STATUS.SIGNED_UP]: "Signed Up",
+};
+
+const STATUS_DOT_COLORS: Record<string, string> = {
+  [PROSPECT_STATUS.DISCOVERED]: "bg-muted-foreground",
+  [PROSPECT_STATUS.SCANNED]: "bg-primary",
+  [PROSPECT_STATUS.EMAILED]: "bg-neo-amber",
+  [PROSPECT_STATUS.SIGNED_UP]: "bg-primary",
 };
 
 function StarRating({ rating }: { rating: number }) {
@@ -86,8 +97,7 @@ function StarRating({ rating }: { rating: number }) {
 function ScoreBadge({ score }: { score: number | null | undefined }) {
   if (score == null) return null;
 
-  const grade =
-    score >= 70 ? "score-good" : score >= 40 ? "score-warn" : "score-bad";
+  const grade = gradeClass(scoreGrade(score, [70, 40]));
 
   return (
     <span
@@ -101,23 +111,16 @@ function ScoreBadge({ score }: { score: number | null | undefined }) {
 
 export default function ProspectsPage() {
   const router = useRouter();
-  const { data: session, isPending } = authClient.useSession();
+  const { session, isPending } = useRequireAuth();
 
   const [city, setCity] = useState("");
-  const [limit, setLimit] = useState("10");
+  const [limit, setLimit] = useState(10);
   const [discoverStatus, setDiscoverStatus] = useState<DiscoverStatus>("idle");
   const [discoverError, setDiscoverError] = useState("");
   const [prospects, setProspects] = useState<Prospect[]>([]);
   const [sendingIds, setSendingIds] = useState<Set<string>>(new Set());
   const [emailError, setEmailError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!isPending && !session) {
-      router.push("/sign-in");
-    }
-  }, [session, isPending, router]);
-
-  // Load all prospects on mount
   useEffect(() => {
     if (session) {
       fetchProspects();
@@ -146,7 +149,7 @@ export default function ProspectsPage() {
       const res = await fetch("/api/prospects/scan-city", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ city, limit: parseInt(limit) || 10 }),
+        body: JSON.stringify({ city, limit }),
       });
 
       if (!res.ok) {
@@ -155,7 +158,6 @@ export default function ProspectsPage() {
       }
 
       setDiscoverStatus("done");
-      // Refresh prospect list
       await fetchProspects();
     } catch (err) {
       setDiscoverError(
@@ -181,8 +183,11 @@ export default function ProspectsPage() {
         throw new Error(data.error || "Failed to send email");
       }
 
-      // Refresh prospects to show updated status
-      await fetchProspects();
+      setProspects((prev) =>
+        prev.map((p) =>
+          p.id === prospectId ? { ...p, status: PROSPECT_STATUS.EMAILED } : p
+        )
+      );
     } catch (err) {
       setEmailError(
         err instanceof Error ? err.message : "Failed to send email"
@@ -195,6 +200,15 @@ export default function ProspectsPage() {
       });
     }
   }
+
+  const statusCounts = useMemo(
+    () =>
+      prospects.reduce<Record<string, number>>((acc, p) => {
+        acc[p.status] = (acc[p.status] || 0) + 1;
+        return acc;
+      }, {}),
+    [prospects]
+  );
 
   if (isPending) {
     return (
@@ -209,22 +223,12 @@ export default function ProspectsPage() {
 
   if (!session) return null;
 
-  const statusCounts = prospects.reduce<Record<string, number>>((acc, p) => {
-    acc[p.status] = (acc[p.status] || 0) + 1;
-    return acc;
-  }, {});
-
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-sm">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-          <Link
-            href="/"
-            className="text-xl font-semibold tracking-tight text-primary"
-          >
-            neo
-          </Link>
+          <NeoLogo size="xl" />
           <div className="flex items-center gap-1">
             <Link href="/dashboard">
               <Button variant="ghost" size="sm">
@@ -307,8 +311,8 @@ export default function ProspectsPage() {
                 <Input
                   id="discover-limit"
                   type="number"
-                  value={limit}
-                  onChange={(e) => setLimit(e.target.value)}
+                  value={String(limit)}
+                  onChange={(e) => setLimit(Number(e.target.value) || 10)}
                   min="1"
                   max="50"
                 />
@@ -393,13 +397,7 @@ export default function ProspectsPage() {
                   >
                     <span
                       className={`inline-block size-1.5 rounded-full ${
-                        status === "discovered"
-                          ? "bg-muted-foreground"
-                          : status === "scanned"
-                            ? "bg-primary"
-                            : status === "emailed"
-                              ? "bg-neo-amber"
-                              : "bg-primary"
+                        STATUS_DOT_COLORS[status] || STATUS_DOT_COLORS[PROSPECT_STATUS.DISCOVERED]
                       }`}
                     />
                     {count} {STATUS_LABELS[status] || status}
@@ -444,7 +442,7 @@ export default function ProspectsPage() {
                       </h3>
                       <Badge
                         className={`shrink-0 border-0 ${
-                          STATUS_COLORS[p.status] || STATUS_COLORS.discovered
+                          STATUS_COLORS[p.status] || STATUS_COLORS[PROSPECT_STATUS.DISCOVERED]
                         }`}
                       >
                         {STATUS_LABELS[p.status] || p.status}
@@ -501,8 +499,8 @@ export default function ProspectsPage() {
                       </Link>
                     )}
                     {p.email &&
-                      p.status !== "emailed" &&
-                      p.status !== "signed_up" && (
+                      p.status !== PROSPECT_STATUS.EMAILED &&
+                      p.status !== PROSPECT_STATUS.SIGNED_UP && (
                         <Button
                           size="sm"
                           variant="outline"
@@ -522,7 +520,7 @@ export default function ProspectsPage() {
                           )}
                         </Button>
                       )}
-                    {p.status === "emailed" && (
+                    {p.status === PROSPECT_STATUS.EMAILED && (
                       <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                         <CheckCircle2 className="size-3" />
                         Sent

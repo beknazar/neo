@@ -1,9 +1,12 @@
-import { getReport, getTotalUsers } from "@/lib/db";
+import { getReport, getReportBySlug, getTotalUsers } from "@/lib/db";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { NeoLogo } from "@/components/neo-logo";
 import { FREE_SLOTS } from "@/lib/constants";
+import { type Grade, scoreGrade, gradeClass, gradeBorderClass, formatDate } from "@/lib/scoring";
+import type { Metadata } from "next";
 import {
   Trophy,
   TrendingUp,
@@ -16,17 +19,51 @@ import {
   Clock,
 } from "lucide-react";
 
-export default async function ReportPage({
+type PageProps = {
+  params: Promise<{ slug: string }>;
+};
+
+/* -------------------------------------------------------------------------- */
+/*  SEO Metadata                                                              */
+/* -------------------------------------------------------------------------- */
+
+export async function generateMetadata({
   params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
-  const row = await getReport(id);
+}: PageProps): Promise<Metadata> {
+  const { slug } = await params;
+
+  // Try slug first, fall back to UUID for old links
+  let row = await getReportBySlug(slug);
+  if (!row) row = await getReport(slug);
+  if (!row) return { title: "Report Not Found" };
+
+  const report = row.report_data;
+  return {
+    title: `${report.businessName} AI Visibility Report — Neo`,
+    description: `${report.businessName} scored ${report.recommendationScore}/100 for AI search visibility in ${report.city}. ${report.strongQueries.length} visible queries, ${report.gapQueries.length} gaps found.`,
+    openGraph: {
+      title: `${report.businessName} AI Visibility Report`,
+      description: `AI search visibility score: ${report.recommendationScore}/100 in ${report.city}`,
+    },
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Page Component                                                            */
+/* -------------------------------------------------------------------------- */
+
+export default async function ReportPage({ params }: PageProps) {
+  const { slug } = await params;
+
+  // Try slug first, fall back to UUID for old links
+  const [slugRow, totalUsers] = await Promise.all([
+    getReportBySlug(slug),
+    getTotalUsers(),
+  ]);
+  const row = slugRow ?? (await getReport(slug));
   if (!row) notFound();
 
   const report = row.report_data;
-  const totalUsers = await getTotalUsers();
   const slotsLeft = Math.max(0, FREE_SLOTS - totalUsers);
   const fixCount = report.fixes?.length || 0;
 
@@ -35,11 +72,7 @@ export default async function ReportPage({
       {/* Header */}
       <header className="border-b border-border/50 px-6 py-4">
         <div className="mx-auto flex max-w-3xl items-center justify-between">
-          <Link href="/" className="flex items-center gap-1.5">
-            <span className="text-lg font-semibold tracking-tight text-primary">
-              neo
-            </span>
-          </Link>
+          <NeoLogo />
           <div className="flex items-center gap-3">
             {slotsLeft > 0 && (
               <Badge variant="secondary" className="font-mono text-xs">
@@ -69,6 +102,14 @@ export default async function ReportPage({
             <p className="mt-1 text-base text-muted-foreground">
               {report.city}
             </p>
+            {row.query_count && row.query_count < 25 && (
+              <Badge variant="secondary" className="mt-2">
+                Lite scan ({row.query_count} queries) —
+                <Link href="/sign-up" className="ml-1 text-primary hover:underline">
+                  Sign up for full analysis
+                </Link>
+              </Badge>
+            )}
           </div>
 
           {/* Score Cards */}
@@ -78,39 +119,21 @@ export default async function ReportPage({
               label="Recommendation Score"
               value={report.recommendationScore}
               suffix="/100"
-              grade={
-                report.recommendationScore >= 30
-                  ? "good"
-                  : report.recommendationScore >= 10
-                    ? "warn"
-                    : "bad"
-              }
+              grade={scoreGrade(report.recommendationScore, [30, 10])}
             />
             <ScoreCard
               icon={<TrendingUp className="size-4" />}
               label="Share of Voice"
               value={report.shareOfVoice}
               suffix="%"
-              grade={
-                report.shareOfVoice >= 20
-                  ? "good"
-                  : report.shareOfVoice >= 5
-                    ? "warn"
-                    : "bad"
-              }
+              grade={scoreGrade(report.shareOfVoice, [20, 5])}
             />
             <ScoreCard
               icon={<Eye className="size-4" />}
               label="Queries Visible"
               value={report.strongQueries.length}
               suffix={`/${report.strongQueries.length + report.gapQueries.length}`}
-              grade={
-                report.strongQueries.length >= 15
-                  ? "good"
-                  : report.strongQueries.length >= 5
-                    ? "warn"
-                    : "bad"
-              }
+              grade={scoreGrade(report.strongQueries.length, [15, 5])}
             />
           </div>
 
@@ -252,12 +275,7 @@ export default async function ReportPage({
           <div className="flex items-center justify-center gap-1.5 text-center">
             <Clock className="size-3 text-muted-foreground" />
             <span className="font-mono text-xs text-muted-foreground">
-              Scanned{" "}
-              {new Date(report.timestamp).toLocaleDateString("en-US", {
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-              })}
+              Scanned {formatDate(report.timestamp)}
             </span>
           </div>
         </div>
@@ -270,18 +288,6 @@ export default async function ReportPage({
 /*  ScoreCard                                                                  */
 /* -------------------------------------------------------------------------- */
 
-const BORDER_COLORS = {
-  good: "border-t-neo-teal",
-  warn: "border-t-neo-amber",
-  bad: "border-t-neo-coral",
-} as const;
-
-const SCORE_CLASSES = {
-  good: "score-good",
-  warn: "score-warn",
-  bad: "score-bad",
-} as const;
-
 function ScoreCard({
   icon,
   label,
@@ -293,11 +299,11 @@ function ScoreCard({
   label: string;
   value: number;
   suffix: string;
-  grade: "good" | "warn" | "bad";
+  grade: Grade;
 }) {
   return (
     <div
-      className={`rounded-xl border-t-2 bg-card px-4 py-5 ring-1 ring-foreground/10 ${BORDER_COLORS[grade]}`}
+      className={`rounded-xl border-t-2 bg-card px-4 py-5 ring-1 ring-foreground/10 ${gradeBorderClass(grade)}`}
     >
       <div className="mb-3 flex items-center gap-1.5 text-muted-foreground">
         {icon}
@@ -305,7 +311,7 @@ function ScoreCard({
       </div>
       <div className="flex items-baseline gap-1">
         <span
-          className={`font-mono text-3xl font-semibold tabular-nums ${SCORE_CLASSES[grade]}`}
+          className={`font-mono text-3xl font-semibold tabular-nums ${gradeClass(grade)}`}
         >
           {value}
         </span>

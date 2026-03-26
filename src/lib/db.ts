@@ -14,6 +14,33 @@ export async function query(text: string, params?: unknown[]) {
   return client.query(text, params);
 }
 
+export async function initDb() {
+  // Add slug column if missing
+  await query(`
+    ALTER TABLE scan_reports ADD COLUMN IF NOT EXISTS slug TEXT UNIQUE
+  `).catch(() => {});
+
+  // Add query_count column if missing
+  await query(`
+    ALTER TABLE scan_reports ADD COLUMN IF NOT EXISTS query_count INTEGER DEFAULT 25
+  `).catch(() => {});
+
+  // Create query cache table
+  await query(`
+    CREATE TABLE IF NOT EXISTS query_cache (
+      cache_key TEXT PRIMARY KEY,
+      query TEXT NOT NULL,
+      response TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `).catch(() => {});
+
+  // Create index for cache cleanup
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_query_cache_created_at ON query_cache (created_at)
+  `).catch(() => {});
+}
+
 export async function saveReport(report: {
   businessName: string;
   businessUrl: string;
@@ -24,10 +51,12 @@ export async function saveReport(report: {
   totalRuns: number;
   reportData: unknown;
   userId?: string;
+  slug?: string;
+  queryCount?: number;
 }) {
   const result = await query(
-    `INSERT INTO scan_reports (business_name, business_url, city, recommendation_score, share_of_voice, total_valid_runs, total_runs, report_data, user_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO scan_reports (business_name, business_url, city, recommendation_score, share_of_voice, total_valid_runs, total_runs, report_data, user_id, slug, query_count)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING id`,
     [
       report.businessName,
@@ -39,6 +68,8 @@ export async function saveReport(report: {
       report.totalRuns,
       JSON.stringify(report.reportData),
       report.userId || null,
+      report.slug || null,
+      report.queryCount ?? 25,
     ]
   );
   return result.rows[0].id as string;
@@ -52,9 +83,37 @@ export async function getReport(id: string) {
   return result.rows[0] || null;
 }
 
+export async function getReportBySlug(slug: string) {
+  const result = await query(
+    "SELECT * FROM scan_reports WHERE slug = $1",
+    [slug]
+  );
+  return result.rows[0] || null;
+}
+
+export function generateSlug(businessName: string, city: string): string {
+  const base = `${businessName}-${city}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 80);
+  return base;
+}
+
+export async function ensureUniqueSlug(slug: string): Promise<string> {
+  const existing = await query(
+    "SELECT id FROM scan_reports WHERE slug = $1",
+    [slug]
+  );
+  if (existing.rows.length === 0) return slug;
+  // Append short random suffix
+  const suffix = Math.random().toString(36).slice(2, 6);
+  return `${slug}-${suffix}`;
+}
+
 export async function getUserReports(userId: string) {
   const result = await query(
-    "SELECT id, business_name, business_url, city, recommendation_score, share_of_voice, created_at FROM scan_reports WHERE user_id = $1 ORDER BY created_at DESC",
+    "SELECT id, slug, business_name, business_url, city, recommendation_score, share_of_voice, query_count, created_at FROM scan_reports WHERE user_id = $1 ORDER BY created_at DESC",
     [userId]
   );
   return result.rows;

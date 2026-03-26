@@ -19,6 +19,7 @@ export async function POST(request: Request) {
       businessName: info.businessName,
       city: info.city,
       description: info.description,
+      url: url.startsWith("http") ? url : `https://${url}`,
     });
   } catch (error) {
     console.error("Extract info error:", error);

@@ -57,7 +57,7 @@ export async function generateFixes(
   fixes.push({
     category: "Reviews",
     title: "Build review presence on key platforms",
-    description: `AI engines use reviews as a pass/fail gate. Businesses below 4.0 stars are excluded from ChatGPT recommendations. Focus on Google Business Profile, Yelp, and RealSelf (med spa specific). Aim for 50+ reviews with 4.5+ average.`,
+    description: `AI engines use reviews as a pass/fail gate. Businesses below 4.0 stars are excluded from AI search recommendations. Focus on Google Business Profile, Yelp, and RealSelf (med spa specific). Aim for 50+ reviews with 4.5+ average.`,
     priority: "high",
   });
 

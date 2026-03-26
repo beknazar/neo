@@ -25,7 +25,20 @@ export async function extractBusinessInfo(url: string): Promise<ExtractedInfo> {
     if (!res.ok) return { businessName: null, city: null, description: null };
 
     const html = await res.text();
-    return parseHtml(html);
+    const result = parseHtml(html);
+
+    // LLM fallback for missing fields
+    if (!result.businessName || !result.city) {
+      const llmResult = await extractWithLLM(html);
+      if (!result.businessName && llmResult.businessName) {
+        result.businessName = llmResult.businessName;
+      }
+      if (!result.city && llmResult.city) {
+        result.city = llmResult.city;
+      }
+    }
+
+    return result;
   } catch {
     return { businessName: null, city: null, description: null };
   }
@@ -116,6 +129,59 @@ function parseHtml(html: string): ExtractedInfo {
   }
 
   return { businessName, city, description };
+}
+
+async function extractWithLLM(
+  html: string
+): Promise<{ businessName: string | null; city: string | null }> {
+  const apiKey = process.env.PERPLEXITY_API_KEY;
+  if (!apiKey) return { businessName: null, city: null };
+
+  const text = html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 3000);
+
+  try {
+    const res = await fetch("https://api.perplexity.ai/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.PERPLEXITY_MODEL || "sonar-pro",
+        messages: [
+          {
+            role: "system",
+            content:
+              'Extract the business name and city from this website text. Respond with ONLY valid JSON: {"businessName": "...", "city": "..."}. Use null for fields you cannot determine.',
+          },
+          { role: "user", content: text },
+        ],
+        max_tokens: 100,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!res.ok) return { businessName: null, city: null };
+
+    const data = await res.json();
+    const content = data.choices?.[0]?.message?.content ?? "";
+
+    // Extract JSON from response (may have markdown wrapping)
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { businessName: null, city: null };
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    return {
+      businessName: parsed.businessName || null,
+      city: parsed.city || null,
+    };
+  } catch {
+    return { businessName: null, city: null };
+  }
 }
 
 function cleanTitle(title: string): string {
