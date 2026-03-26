@@ -188,12 +188,10 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            {/* Social proof */}
-            <div className="mx-auto mt-8 max-w-lg text-center">
-              <p className="text-xs text-muted-foreground">
-                Powered by Perplexity Sonar Pro. Results in under 5 minutes.
-              </p>
-            </div>
+            {/* Results take 2-5 min */}
+            <p className="mx-auto mt-8 max-w-lg text-center text-xs text-muted-foreground">
+              Results in under 5 minutes
+            </p>
           </>
         )}
       </main>

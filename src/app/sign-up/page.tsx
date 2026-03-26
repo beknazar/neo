@@ -1,14 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+
+const FREE_SLOTS = 30;
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -17,6 +20,14 @@ export default function SignUpPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [slotsLeft, setSlotsLeft] = useState(FREE_SLOTS);
+
+  useEffect(() => {
+    fetch("/api/slots")
+      .then((r) => r.json())
+      .then((d) => setSlotsLeft(Math.max(0, FREE_SLOTS - (d.count || 0))))
+      .catch(() => {});
+  }, []);
 
   async function handleSignUp(e: React.FormEvent) {
     e.preventDefault();
@@ -53,6 +64,11 @@ export default function SignUpPage() {
           <p className="text-sm text-muted-foreground">
             Get your AI visibility report
           </p>
+          {slotsLeft > 0 && (
+            <Badge variant="secondary" className="mx-auto mt-2">
+              {slotsLeft} of {FREE_SLOTS} free spots left
+            </Badge>
+          )}
         </CardHeader>
         <CardContent className="space-y-4">
           <Button
