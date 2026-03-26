@@ -27,6 +27,8 @@ import {
   AlertCircle,
   CheckCircle2,
   Hash,
+  X,
+  Eye,
 } from "lucide-react";
 
 const US_CITIES = [
@@ -122,6 +124,14 @@ export default function ProspectsPage() {
   const [prospects, setProspects] = useState<Prospect[]>([]);
   const [sendingIds, setSendingIds] = useState<Set<string>>(new Set());
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailModal, setEmailModal] = useState<{
+    prospectId: string;
+    to: string;
+    businessName: string;
+    subject: string;
+    body: string;
+  } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => {
     if (session?.user?.id) {
@@ -169,7 +179,37 @@ export default function ProspectsPage() {
     }
   }
 
-  async function handleSendEmail(prospectId: string) {
+  async function handlePreviewEmail(prospectId: string) {
+    setPreviewLoading(true);
+    setEmailError(null);
+
+    try {
+      const res = await fetch("/api/prospects/send-email", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prospectId }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to load preview");
+      }
+
+      const data = await res.json();
+      setEmailModal({ prospectId, ...data });
+    } catch (err) {
+      setEmailError(
+        err instanceof Error ? err.message : "Failed to load preview"
+      );
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  async function handleSendEmail() {
+    if (!emailModal) return;
+    const { prospectId, subject, body } = emailModal;
+
     setSendingIds((prev) => new Set(prev).add(prospectId));
     setEmailError(null);
 
@@ -177,7 +217,7 @@ export default function ProspectsPage() {
       const res = await fetch("/api/prospects/send-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prospectId }),
+        body: JSON.stringify({ prospectId, subject, emailBody: body }),
       });
 
       if (!res.ok) {
@@ -190,6 +230,7 @@ export default function ProspectsPage() {
           p.id === prospectId ? { ...p, status: PROSPECT_STATUS.EMAILED } : p
         )
       );
+      setEmailModal(null);
     } catch (err) {
       setEmailError(
         err instanceof Error ? err.message : "Failed to send email"
@@ -534,18 +575,18 @@ export default function ProspectsPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={sendingIds.has(p.id)}
-                          onClick={() => handleSendEmail(p.id)}
+                          disabled={previewLoading}
+                          onClick={() => handlePreviewEmail(p.id)}
                         >
-                          {sendingIds.has(p.id) ? (
+                          {previewLoading ? (
                             <>
                               <Loader2 className="size-3 animate-spin" />
-                              Sending...
+                              Loading...
                             </>
                           ) : (
                             <>
-                              <Send className="size-3" />
-                              Send Email
+                              <Eye className="size-3" />
+                              Preview Email
                             </>
                           )}
                         </Button>
@@ -563,6 +604,93 @@ export default function ProspectsPage() {
           )}
         </div>
       </main>
+
+      {/* Email Preview Modal */}
+      {emailModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="mx-4 w-full max-w-lg rounded-xl border border-border bg-card p-6 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-sm font-semibold">
+                Email to {emailModal.businessName}
+              </h3>
+              <button
+                onClick={() => setEmailModal(null)}
+                className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <Label className="mb-1 block text-xs text-muted-foreground">
+                  To
+                </Label>
+                <div className="rounded-md bg-muted/50 px-3 py-1.5 font-mono text-xs text-muted-foreground">
+                  {emailModal.to}
+                </div>
+              </div>
+
+              <div>
+                <Label className="mb-1 block text-xs text-muted-foreground">
+                  Subject
+                </Label>
+                <Input
+                  value={emailModal.subject}
+                  onChange={(e) =>
+                    setEmailModal((m) =>
+                      m ? { ...m, subject: e.target.value } : null
+                    )
+                  }
+                />
+              </div>
+
+              <div>
+                <Label className="mb-1 block text-xs text-muted-foreground">
+                  Body
+                </Label>
+                <textarea
+                  value={emailModal.body}
+                  onChange={(e) =>
+                    setEmailModal((m) =>
+                      m ? { ...m, body: e.target.value } : null
+                    )
+                  }
+                  rows={12}
+                  className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setEmailModal(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={sendingIds.has(emailModal.prospectId)}
+                onClick={handleSendEmail}
+              >
+                {sendingIds.has(emailModal.prospectId) ? (
+                  <>
+                    <Loader2 className="size-3 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Send className="size-3" />
+                    Send Email
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
