@@ -2,7 +2,7 @@ import { Pool } from "pg";
 
 let pool: Pool | null = null;
 
-function getPool() {
+export function getPool() {
   if (!pool) {
     pool = new Pool({ connectionString: process.env.DATABASE_URL });
   }
@@ -170,12 +170,4 @@ export async function saveEmailSend(send: EmailSendRecord): Promise<string> {
     ]
   );
   return result.rows[0].id as string;
-}
-
-export async function getProspectsByCity(city: string) {
-  const result = await query(
-    "SELECT * FROM prospects WHERE city = $1 ORDER BY rating DESC NULLS LAST",
-    [city]
-  );
-  return result.rows;
 }

@@ -3,6 +3,8 @@
  * Checks: JSON-LD structured data → Open Graph → <title> → meta description
  */
 
+import { USER_AGENT } from "@/lib/constants";
+
 export interface ExtractedInfo {
   businessName: string | null;
   city: string | null;
@@ -15,8 +17,7 @@ export async function extractBusinessInfo(url: string): Promise<ExtractedInfo> {
   try {
     const res = await fetch(fullUrl, {
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (compatible; NeoBot/1.0; +https://neo-beksprojects.vercel.app)",
+        "User-Agent": USER_AGENT,
       },
       signal: AbortSignal.timeout(10000),
     });

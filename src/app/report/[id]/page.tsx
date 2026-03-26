@@ -5,8 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-
-const FREE_SLOTS = 30;
+import { FREE_SLOTS } from "@/lib/constants";
 
 export default async function ReportPage({
   params,

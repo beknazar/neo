@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import {
   query,
@@ -8,10 +8,9 @@ import {
   getTotalUsers,
 } from "@/lib/db";
 import { generateOutreachEmail } from "@/lib/email-templates";
+import { FREE_SLOTS, APP_URL } from "@/lib/constants";
 
-const execAsync = promisify(exec);
-
-const FREE_SLOTS = 30;
+const execFileAsync = promisify(execFile);
 
 export async function POST(request: Request) {
   try {
@@ -62,8 +61,8 @@ export async function POST(request: Request) {
 
     // 4. Generate email
     const reportUrl = prospect.scan_report_id
-      ? `https://neo-beksprojects.vercel.app/report/${prospect.scan_report_id}`
-      : `https://neo-beksprojects.vercel.app`;
+      ? `${APP_URL}/report/${prospect.scan_report_id}`
+      : APP_URL;
 
     const parsed = reportData?.report_data
       ? typeof reportData.report_data === "string"
@@ -86,9 +85,13 @@ export async function POST(request: Request) {
     });
 
     // 5. Send email via gws CLI
-    await execAsync(
-      `gws gmail send --to "${prospect.email}" --subject "${emailData.subject.replace(/"/g, '\\"')}" --body "${emailData.body.replace(/"/g, '\\"')}" --from bek@abdik.me`
-    );
+    await execFileAsync("gws", [
+      "gmail", "send",
+      "--to", prospect.email,
+      "--subject", emailData.subject,
+      "--body", emailData.body,
+      "--from", "bek@abdik.me"
+    ]);
 
     // 6. Save to email_sends table
     await saveEmailSend({

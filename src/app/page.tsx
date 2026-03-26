@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -12,8 +11,6 @@ import { Progress } from "@/components/ui/progress";
 import { authClient } from "@/lib/auth-client";
 
 type ScanStatus = "idle" | "scanning" | "done" | "error";
-
-const FREE_SLOTS = 30;
 
 export default function Home() {
   const router = useRouter();
@@ -24,14 +21,6 @@ export default function Home() {
   const [status, setStatus] = useState<ScanStatus>("idle");
   const [error, setError] = useState("");
   const [progress, setProgress] = useState(0);
-  const [slotsLeft, setSlotsLeft] = useState(FREE_SLOTS);
-
-  useEffect(() => {
-    fetch("/api/slots")
-      .then((r) => r.json())
-      .then((d) => setSlotsLeft(Math.max(0, FREE_SLOTS - (d.count || 0))))
-      .catch(() => {});
-  }, []);
 
   async function handleScan() {
     if (!businessName || !businessUrl || !city) return;

@@ -268,16 +268,15 @@ export function scoreResults(
     .sort((a, b) => b.mentionCount - a.mentionCount)
     .slice(0, 10);
 
-  // Share of Voice
+  // Share of Voice (reuse totalWeight from recommendation score above)
   const totalCompetitorWeight = competitorMentions.reduce(
     (sum, c) => sum + c.totalWeight,
     0
   );
-  const myMentionWeight = mentions.reduce((sum, m) => sum + m.weight, 0);
   const shareOfVoice =
-    myMentionWeight + totalCompetitorWeight > 0
+    totalWeight + totalCompetitorWeight > 0
       ? Math.round(
-          (myMentionWeight / (myMentionWeight + totalCompetitorWeight)) * 100
+          (totalWeight / (totalWeight + totalCompetitorWeight)) * 100
         )
       : 0;
 

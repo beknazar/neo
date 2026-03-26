@@ -5,6 +5,7 @@
  */
 
 import { promises as dns } from "dns";
+import { USER_AGENT } from "@/lib/constants";
 
 // --- Types ---
 
@@ -208,8 +209,7 @@ async function safeFetch(url: string): Promise<string | null> {
   try {
     const res = await fetch(url, {
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (compatible; NeoBot/1.0; +https://neo-beksprojects.vercel.app)",
+        "User-Agent": USER_AGENT,
       },
       signal: AbortSignal.timeout(10_000),
       redirect: "follow",
