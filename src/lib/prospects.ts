@@ -1,7 +1,7 @@
 /**
  * Prospect discovery and email finding.
- * Uses Apify Google Maps Scraper to find med spas,
- * then scrapes websites to find contact emails.
+ * Primary: Apify Google Maps Scraper (with token rotation).
+ * Fallback: Free web scraping (YellowPages + DuckDuckGo) when tokens exhausted.
  */
 
 import { promises as dns } from "dns";
@@ -49,7 +49,6 @@ const APIFY_BASE_URL = "https://api.apify.com/v2";
 const APIFY_TOKEN_POOL: string[] =
   process.env.APIFY_TOKENS?.split(",").map((t) => t.trim()).filter(Boolean) ?? [];
 
-// Track exhausted tokens: token → month when it was exhausted (resets monthly)
 const exhaustedTokens = new Map<string, number>();
 
 function currentMonth(): number {
@@ -64,7 +63,6 @@ function markExhausted(token: string): void {
 function isExhausted(token: string): boolean {
   const month = exhaustedTokens.get(token);
   if (!month) return false;
-  // Reset if we're in a new month
   if (month < currentMonth()) {
     exhaustedTokens.delete(token);
     return false;
@@ -77,30 +75,49 @@ function getAvailableTokens(): string[] {
     const token = process.env.APIFY_TOKEN;
     return token ? [token] : [];
   }
-  const available = APIFY_TOKEN_POOL.filter((t) => !isExhausted(t));
-  return available;
+  return APIFY_TOKEN_POOL.filter((t) => !isExhausted(t));
 }
 
 function getApifyToken(): string {
   const available = getAvailableTokens();
   if (available.length === 0) {
     const total = APIFY_TOKEN_POOL.length || 1;
-    const exhausted = exhaustedTokens.size;
     throw new Error(
-      `All ${total} Apify tokens are exhausted this month (${exhausted} used). Tokens reset on the 1st.`
+      `All ${total} Apify tokens are exhausted this month. Tokens reset on the 1st.`
     );
   }
   return available[Math.floor(Math.random() * available.length)];
 }
 
+// --- Discovery: Main Entry Point ---
+
 /**
- * Discover businesses in a city using Apify Google Maps Scraper.
- * Accepts a vertical (e.g. "dentist", "personal injury lawyer") to customize the search.
+ * Discover businesses in a city.
+ * Tries Apify first, falls back to free scraping if all tokens exhausted.
  */
 export async function discoverBusinesses(
   city: string,
   vertical: string = "med spa",
   limit: number = 20
+): Promise<DiscoveredBusiness[]> {
+  try {
+    return await discoverBusinessesApify(city, vertical, limit);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (msg.includes("tokens") && msg.includes("exhausted")) {
+      console.warn(`[discovery] ${msg}`);
+      return await discoverBusinessesFree(city, vertical, limit);
+    }
+    throw error;
+  }
+}
+
+// --- Discovery: Apify ---
+
+async function discoverBusinessesApify(
+  city: string,
+  vertical: string,
+  limit: number
 ): Promise<DiscoveredBusiness[]> {
   const searchQuery = `${vertical} in ${city}`;
   const maxRetries = Math.min(getAvailableTokens().length, 10);
@@ -108,7 +125,6 @@ export async function discoverBusinesses(
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const token = getApifyToken();
 
-    // 1. Start the actor run
     const runRes = await fetch(
       `${APIFY_BASE_URL}/acts/${APIFY_ACTOR_ID}/runs?token=${token}`,
       {
@@ -123,7 +139,6 @@ export async function discoverBusinesses(
 
     if (!runRes.ok) {
       const text = await runRes.text();
-      // 401 = invalid token, 403 = quota exceeded — mark and retry
       if (runRes.status === 401 || runRes.status === 403) {
         markExhausted(token);
         console.warn(
@@ -138,10 +153,8 @@ export async function discoverBusinesses(
     const runId = runData.data.id;
     const datasetId = runData.data.defaultDatasetId;
 
-    // 2. Poll until run completes
     await pollRunCompletion(runId, token);
 
-    // 3. Fetch dataset items
     const itemsRes = await fetch(
       `${APIFY_BASE_URL}/datasets/${datasetId}/items?token=${token}`
     );
@@ -170,9 +183,6 @@ export async function discoverBusinesses(
   );
 }
 
-/**
- * Poll an Apify actor run until it reaches a terminal state.
- */
 async function pollRunCompletion(
   runId: string,
   token: string,
@@ -199,11 +209,241 @@ async function pollRunCompletion(
       throw new Error(`Apify run ended with status: ${status}`);
     }
 
-    // Still running — wait before next poll
     await new Promise((r) => setTimeout(r, pollIntervalMs));
   }
 
   throw new Error(`Apify run timed out after ${maxWaitMs}ms`);
+}
+
+// --- Discovery: Free Fallback (YellowPages + DuckDuckGo) ---
+
+const BROWSER_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+
+const SKIP_DOMAINS = new Set([
+  "yelp.com", "yellowpages.com", "facebook.com", "instagram.com",
+  "twitter.com", "x.com", "linkedin.com", "tripadvisor.com",
+  "bbb.org", "angi.com", "thumbtack.com", "groupon.com",
+  "google.com", "youtube.com", "wikipedia.org", "reddit.com",
+  "pinterest.com", "nextdoor.com", "mapquest.com", "foursquare.com",
+  "manta.com", "superpages.com", "citysearch.com", "tiktok.com",
+]);
+
+function shouldSkipUrl(url: string): boolean {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+    for (const d of SKIP_DOMAINS) {
+      if (hostname === d || hostname.endsWith(`.${d}`)) return true;
+    }
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+async function fetchPage(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": BROWSER_UA,
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      signal: AbortSignal.timeout(15_000),
+      redirect: "follow",
+    });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Free fallback: scrape YellowPages + DuckDuckGo in parallel,
+ * merge and deduplicate results.
+ */
+async function discoverBusinessesFree(
+  city: string,
+  vertical: string,
+  limit: number
+): Promise<DiscoveredBusiness[]> {
+  console.log(
+    `[discovery:free] Scraping YellowPages + DuckDuckGo for "${vertical} in ${city}"`
+  );
+
+  const [ypResult, ddgResult] = await Promise.allSettled([
+    scrapeYellowPages(vertical, city),
+    scrapeDuckDuckGo(vertical, city),
+  ]);
+
+  const results: DiscoveredBusiness[] = [];
+
+  if (ypResult.status === "fulfilled") {
+    console.log(`[discovery:free] YellowPages -> ${ypResult.value.length} results`);
+    results.push(...ypResult.value);
+  } else {
+    console.warn(`[discovery:free] YellowPages failed: ${ypResult.reason}`);
+  }
+
+  if (ddgResult.status === "fulfilled") {
+    console.log(`[discovery:free] DuckDuckGo -> ${ddgResult.value.length} results`);
+    results.push(...ddgResult.value);
+  } else {
+    console.warn(`[discovery:free] DuckDuckGo failed: ${ddgResult.reason}`);
+  }
+
+  if (results.length === 0) {
+    throw new Error(
+      "Free fallback scrapers returned no results. Try again later or wait for Apify token reset on the 1st."
+    );
+  }
+
+  return deduplicateBusinesses(results).slice(0, limit);
+}
+
+/**
+ * Scrape YellowPages search results.
+ * Returns businesses with name, website URL, phone, and address.
+ */
+async function scrapeYellowPages(
+  vertical: string,
+  city: string
+): Promise<DiscoveredBusiness[]> {
+  const url = `https://www.yellowpages.com/search?search_terms=${encodeURIComponent(vertical)}&geo_location_terms=${encodeURIComponent(city)}`;
+  const html = await fetchPage(url);
+  if (!html) return [];
+
+  const businesses: DiscoveredBusiness[] = [];
+
+  // Split on result boundaries and parse each block
+  const blocks = html.split(/class="[^"]*(?:result|v-card)[^"]*"/).slice(1);
+
+  for (const block of blocks) {
+    const nameMatch = block.match(
+      /class="business-name"[^>]*>(?:<[^>]*>)*\s*([^<]+)/
+    );
+    if (!nameMatch) continue;
+    const businessName = nameMatch[1].trim();
+    if (businessName.length < 3) continue;
+
+    const websiteMatch = block.match(
+      /class="track-visit-website"[^>]*href="([^"]+)"/
+    );
+    const businessUrl = websiteMatch ? websiteMatch[1] : "";
+
+    const phoneMatch = block.match(/class="phones[^"]*"[^>]*>\s*([^<]+)/);
+    const phone = phoneMatch ? phoneMatch[1].trim() : null;
+
+    const streetMatch = block.match(/class="street-address"[^>]*>\s*([^<]+)/);
+    const localityMatch = block.match(/class="locality"[^>]*>\s*([^<]+)/);
+    const address =
+      [streetMatch?.[1]?.trim(), localityMatch?.[1]?.trim()]
+        .filter(Boolean)
+        .join(", ") || null;
+
+    businesses.push({
+      businessName,
+      businessUrl,
+      phone,
+      rating: null,
+      reviewCount: null,
+      address,
+    });
+  }
+
+  return businesses;
+}
+
+/**
+ * Scrape DuckDuckGo HTML search for direct business website URLs.
+ * Filters out aggregator sites to keep only real business domains.
+ */
+async function scrapeDuckDuckGo(
+  vertical: string,
+  city: string
+): Promise<DiscoveredBusiness[]> {
+  const query = encodeURIComponent(`${vertical} in ${city}`);
+  const url = `https://html.duckduckgo.com/html/?q=${query}`;
+  const html = await fetchPage(url);
+  if (!html) return [];
+
+  const businesses: DiscoveredBusiness[] = [];
+  const cityEscaped = city.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const resultPattern =
+    /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+  let match;
+
+  while ((match = resultPattern.exec(html)) !== null) {
+    let rawUrl = match[1];
+    const rawTitle = match[2].replace(/<[^>]*>/g, "").trim();
+
+    // Resolve DuckDuckGo redirect URLs
+    const uddgMatch = rawUrl.match(/[?&]uddg=([^&]+)/);
+    if (uddgMatch) rawUrl = decodeURIComponent(uddgMatch[1]);
+
+    if (!rawUrl.startsWith("http")) continue;
+    if (shouldSkipUrl(rawUrl)) continue;
+    if (!rawTitle || rawTitle.length < 3) continue;
+
+    // Clean title to extract business name
+    const businessName =
+      rawTitle
+        .replace(
+          /\s*[-|–—]\s*(Home|About Us|About|Contact Us|Contact|Welcome|Official Site|Official Website).*$/i,
+          ""
+        )
+        .replace(
+          new RegExp(`\\s*[-|–—]\\s*.*${cityEscaped}.*$`, "i"),
+          ""
+        )
+        .trim() || rawTitle.trim();
+
+    if (businessName.length < 3) continue;
+
+    businesses.push({
+      businessName,
+      businessUrl: rawUrl,
+      phone: null,
+      rating: null,
+      reviewCount: null,
+      address: null,
+    });
+  }
+
+  return businesses;
+}
+
+/**
+ * Merge businesses from multiple sources, dedup by normalized name,
+ * and prefer entries with more data.
+ */
+function deduplicateBusinesses(
+  businesses: DiscoveredBusiness[]
+): DiscoveredBusiness[] {
+  const seen = new Map<string, DiscoveredBusiness>();
+
+  for (const biz of businesses) {
+    const key = biz.businessName.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (key.length < 3) continue;
+
+    const existing = seen.get(key);
+    if (!existing) {
+      seen.set(key, { ...biz });
+    } else {
+      // Merge: fill gaps from the new entry
+      if (!existing.businessUrl && biz.businessUrl)
+        existing.businessUrl = biz.businessUrl;
+      if (!existing.phone && biz.phone) existing.phone = biz.phone;
+      if (!existing.address && biz.address) existing.address = biz.address;
+      if (existing.rating == null && biz.rating != null)
+        existing.rating = biz.rating;
+      if (existing.reviewCount == null && biz.reviewCount != null)
+        existing.reviewCount = biz.reviewCount;
+    }
+  }
+
+  return Array.from(seen.values());
 }
 
 // --- Email Finding ---
@@ -257,21 +497,15 @@ function isLikelyRealEmail(email: string): boolean {
     if (domain === fp || domain.endsWith(`.${fp}`)) return false;
   }
 
-  // Filter out image/file extensions that regex might catch
   if (/\.(png|jpg|jpeg|gif|svg|webp|css|js)$/i.test(domain)) return false;
 
   return true;
 }
 
-/**
- * Fetch a URL safely, returning the HTML text or null on failure.
- */
 async function safeFetch(url: string): Promise<string | null> {
   try {
     const res = await fetch(url, {
-      headers: {
-        "User-Agent": USER_AGENT,
-      },
+      headers: { "User-Agent": USER_AGENT },
       signal: AbortSignal.timeout(10_000),
       redirect: "follow",
     });
@@ -284,7 +518,6 @@ async function safeFetch(url: string): Promise<string | null> {
 
 /**
  * Find a business email by scraping the website and common contact pages.
- * Returns the most likely business contact email, or null.
  */
 export async function findEmailFromWebsite(
   websiteUrl: string
@@ -293,13 +526,10 @@ export async function findEmailFromWebsite(
     ? websiteUrl
     : `https://${websiteUrl}`;
 
-  // Normalize: remove trailing slash for consistent path joining
   const base = baseUrl.replace(/\/+$/, "");
-
   const pagePaths = ["", "/contact", "/contact-us", "/about"];
   const allEmails: string[] = [];
 
-  // Fetch all pages in parallel
   const pages = await Promise.all(
     pagePaths.map((path) => safeFetch(`${base}${path}`))
   );
@@ -310,21 +540,28 @@ export async function findEmailFromWebsite(
     allEmails.push(...matches);
   }
 
-  // Deduplicate and filter
-  const uniqueEmails = Array.from(new Set(allEmails.map((e) => e.toLowerCase())));
+  const uniqueEmails = Array.from(
+    new Set(allEmails.map((e) => e.toLowerCase()))
+  );
   const validEmails = uniqueEmails.filter(isLikelyRealEmail);
 
   if (validEmails.length === 0) return null;
 
-  // Rank emails: prefer info@, hello@, contact@ over generic ones
-  const preferredPrefixes = ["info", "hello", "contact", "appointments", "book", "office", "front"];
+  const preferredPrefixes = [
+    "info",
+    "hello",
+    "contact",
+    "appointments",
+    "book",
+    "office",
+    "front",
+  ];
 
   const ranked = validEmails.sort((a, b) => {
     const aPrefix = a.split("@")[0];
     const bPrefix = b.split("@")[0];
     const aRank = preferredPrefixes.indexOf(aPrefix);
     const bRank = preferredPrefixes.indexOf(bPrefix);
-    // Preferred prefixes first (found = index >= 0), then alphabetical
     if (aRank >= 0 && bRank >= 0) return aRank - bRank;
     if (aRank >= 0) return -1;
     if (bRank >= 0) return 1;
@@ -338,7 +575,6 @@ export async function findEmailFromWebsite(
 
 /**
  * Validate an email address by checking if the domain has MX records.
- * Returns true if MX records exist (email is likely deliverable).
  */
 export async function validateEmail(email: string): Promise<boolean> {
   const domain = email.split("@")[1];

@@ -137,7 +137,7 @@ export default function DashboardPage() {
     return <DashboardSkeleton />;
   }
 
-  if (!session) return null;
+  if (!session?.user) return null;
 
   return (
     <div className="min-h-screen bg-background">

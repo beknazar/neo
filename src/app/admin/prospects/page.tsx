@@ -221,7 +221,7 @@ export default function ProspectsPage() {
     );
   }
 
-  if (!session) return null;
+  if (!session?.user?.email) return null;
 
   const isAdmin = ADMIN_EMAILS.has(session.user.email);
   if (!isAdmin) {
