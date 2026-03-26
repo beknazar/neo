@@ -67,9 +67,11 @@ const STATUS_CONFIG: Record<string, { bg: string; dot: string; label: string }> 
   [PROSPECT_STATUS.SIGNED_UP]: { bg: "bg-primary/15 text-primary font-semibold", dot: "bg-primary", label: "Signed Up" },
 };
 
-function StarRating({ rating }: { rating: number }) {
-  const full = Math.floor(rating);
-  const hasHalf = rating - full >= 0.25 && rating - full < 0.75;
+function StarRating({ rating }: { rating: number | string }) {
+  const num = Number(rating);
+  if (isNaN(num)) return null;
+  const full = Math.floor(num);
+  const hasHalf = num - full >= 0.25 && num - full < 0.75;
   const empty = 5 - full - (hasHalf ? 1 : 0);
 
   return (
@@ -87,7 +89,7 @@ function StarRating({ rating }: { rating: number }) {
         <Star key={`e-${i}`} className="size-3 text-muted-foreground/30" />
       ))}
       <span className="ml-1 text-xs tabular-nums text-muted-foreground">
-        {rating.toFixed(1)}
+        {num.toFixed(1)}
       </span>
     </span>
   );
