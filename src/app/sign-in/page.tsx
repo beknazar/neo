@@ -37,7 +37,11 @@ export default function SignInPage() {
     });
 
     if (error) {
-      setError(error.message || "Invalid credentials");
+      setError(
+        error.code === "INVALID_EMAIL_OR_PASSWORD"
+          ? "Invalid email or password"
+          : "Something went wrong. Please try again."
+      );
       setLoading(false);
       return;
     }

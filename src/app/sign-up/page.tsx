@@ -46,7 +46,11 @@ export default function SignUpPage() {
     });
 
     if (error) {
-      setError(error.message || "Sign up failed");
+      setError(
+        error.code === "USER_ALREADY_EXISTS"
+          ? "An account with this email already exists"
+          : "Something went wrong. Please try again."
+      );
       setLoading(false);
       return;
     }
