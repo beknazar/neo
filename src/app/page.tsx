@@ -9,6 +9,14 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { authClient } from "@/lib/auth-client";
+import {
+  Search,
+  ArrowRight,
+  Globe,
+  Activity,
+  Radio,
+  ChevronRight,
+} from "lucide-react";
 
 type ScanStatus = "idle" | "scanning" | "done" | "error";
 
@@ -61,129 +69,228 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen">
-      <header className="border-b px-6 py-4">
-        <div className="mx-auto flex max-w-4xl items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-sm font-bold text-white">
-              N
+    <div className="flex min-h-screen flex-col">
+      {/* Header */}
+      <header className="border-b border-border/50 px-6 py-3.5">
+        <div className="mx-auto flex max-w-5xl items-center justify-between">
+          <Link href="/" className="flex items-center gap-2.5">
+            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary">
+              <span className="text-xs font-bold tracking-tight text-primary-foreground">
+                N
+              </span>
             </div>
-            <span className="text-lg font-semibold tracking-tight">Neo</span>
-          </div>
-          <div className="flex items-center gap-3">
-            {/* scarcity shown on report pages + emails, not here */}
+            <span className="text-sm font-semibold tracking-tight text-foreground">
+              Neo
+            </span>
+          </Link>
+          <nav className="flex items-center gap-2">
             {session ? (
               <Link href="/dashboard">
-                <Button variant="outline" size="sm">Dashboard</Button>
+                <Button variant="outline" size="sm">
+                  Dashboard
+                  <ChevronRight className="ml-0.5 size-3 opacity-50" />
+                </Button>
               </Link>
             ) : (
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
                 <Link href="/sign-in">
-                  <Button variant="outline" size="sm">Sign in</Button>
+                  <Button variant="ghost" size="sm">
+                    Sign in
+                  </Button>
                 </Link>
                 <Link href="/sign-up">
-                  <Button size="sm" className="bg-emerald-600 text-white hover:bg-emerald-500">
-                    Sign up free
-                  </Button>
+                  <Button size="sm">Get started</Button>
                 </Link>
               </div>
             )}
-          </div>
+          </nav>
         </div>
       </header>
 
-      <main className="mx-auto max-w-4xl px-6 py-12">
-        {/* Scanning State */}
-        {status === "scanning" && (
-          <Card className="mx-auto max-w-lg">
-            <CardContent className="flex flex-col items-center gap-4 py-12">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-emerald-600">
-                <svg className="h-6 w-6 animate-spin text-emerald-600" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-              </div>
-              <div className="text-center">
-                <p className="font-medium">Scanning AI engines...</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Running 25 queries x 3 runs across Perplexity
-                </p>
-              </div>
-              <div className="w-full max-w-xs">
-                <Progress value={progress} className="h-2" />
-              </div>
-              <p className="font-mono text-xs text-muted-foreground">
-                This takes 2-5 minutes
-              </p>
-            </CardContent>
-          </Card>
-        )}
+      {/* Main */}
+      <main className="flex flex-1 flex-col justify-center px-6 py-16">
+        <div className="mx-auto w-full max-w-5xl">
+          {/* Scanning State */}
+          {status === "scanning" && (
+            <div className="mx-auto max-w-lg">
+              <Card>
+                <CardContent className="py-10">
+                  <div className="flex flex-col items-center gap-6">
+                    {/* Animated scan indicator */}
+                    <div className="relative flex h-14 w-14 items-center justify-center">
+                      <div className="absolute inset-0 animate-ping rounded-full bg-primary/20" />
+                      <div className="absolute inset-1 animate-pulse rounded-full bg-primary/10" />
+                      <div className="relative flex h-10 w-10 items-center justify-center rounded-full border border-primary/30 bg-neo-teal-muted">
+                        <Radio className="size-5 text-primary" />
+                      </div>
+                    </div>
 
-        {/* Input Form */}
-        {status !== "scanning" && (
-          <>
-            <div className="mb-10 text-center">
-              <h2 className="mb-3 text-3xl font-semibold tracking-tight">
-                Are you visible to AI search?
-              </h2>
-              <p className="mx-auto max-w-lg text-muted-foreground">
-                Only 1.2% of businesses get recommended by ChatGPT. See where your
-                med spa ranks across AI engines and get specific fixes.
-              </p>
+                    <div className="space-y-1 text-center">
+                      <p className="text-sm font-medium text-foreground">
+                        Scanning AI search engines
+                      </p>
+                      <p className="font-mono text-xs text-muted-foreground">
+                        25 queries x 3 runs across Perplexity
+                      </p>
+                    </div>
+
+                    {/* Progress bar */}
+                    <div className="w-full max-w-xs space-y-2">
+                      <Progress value={progress} className="h-1.5" />
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-[11px] text-muted-foreground">
+                          {progress}% complete
+                        </span>
+                        <span className="font-mono text-[11px] text-muted-foreground">
+                          ~2-5 min
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Activity log */}
+                    <div className="w-full max-w-xs rounded-md border border-border/50 bg-neo-surface px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <Activity className="size-3 animate-pulse text-primary" />
+                        <span className="font-mono text-[11px] text-muted-foreground">
+                          Analyzing visibility signals...
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
+          )}
 
-            <Card className="mx-auto max-w-lg">
-              <CardContent className="space-y-4 pt-6">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Business Name</Label>
-                  <Input
-                    id="name"
-                    value={businessName}
-                    onChange={(e) => setBusinessName(e.target.value)}
-                    placeholder="Glow Med Spa"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="url">Website URL</Label>
-                  <Input
-                    id="url"
-                    value={businessUrl}
-                    onChange={(e) => setBusinessUrl(e.target.value)}
-                    placeholder="glowmedspa.com"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="city">City</Label>
-                  <Input
-                    id="city"
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    placeholder="Los Angeles"
-                  />
+          {/* Input Form */}
+          {status !== "scanning" && (
+            <div className="grid gap-16 lg:grid-cols-[1fr_minmax(0,420px)] lg:items-start lg:gap-20">
+              {/* Left: Hero copy */}
+              <div className="max-w-xl pt-2">
+                <div className="mb-5 inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-neo-surface px-2.5 py-1">
+                  <Globe className="size-3 text-primary" />
+                  <span className="text-[11px] font-medium text-muted-foreground">
+                    AI Search Intelligence
+                  </span>
                 </div>
 
-                <Button
-                  onClick={handleScan}
-                  disabled={!businessName || !businessUrl || !city}
-                  className="w-full bg-emerald-600 text-white hover:bg-emerald-500"
-                  size="lg"
-                >
-                  Scan AI Visibility — Free
-                </Button>
+                <h1 className="text-balance text-4xl font-semibold leading-[1.1] tracking-tight text-foreground lg:text-[2.75rem]">
+                  Measure your visibility
+                  <br />
+                  in AI search engines
+                </h1>
 
-                {error && <p className="text-sm text-destructive">{error}</p>}
+                <p className="mt-5 max-w-md text-[15px] leading-relaxed text-muted-foreground">
+                  When patients ask ChatGPT or Perplexity for med spa
+                  recommendations, does your business appear? Neo scans the
+                  engines that matter and tells you exactly where you stand.
+                </p>
 
-                {/* scarcity in emails + report page only */}
-              </CardContent>
-            </Card>
+                <div className="mt-8 flex flex-col gap-3">
+                  <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
+                    <div className="flex h-5 w-5 items-center justify-center rounded bg-neo-teal-muted">
+                      <Search className="size-3 text-primary" />
+                    </div>
+                    <span>
+                      25 real queries across AI search platforms
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
+                    <div className="flex h-5 w-5 items-center justify-center rounded bg-neo-teal-muted">
+                      <Activity className="size-3 text-primary" />
+                    </div>
+                    <span>
+                      Visibility score with competitive benchmarks
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
+                    <div className="flex h-5 w-5 items-center justify-center rounded bg-neo-teal-muted">
+                      <ArrowRight className="size-3 text-primary" />
+                    </div>
+                    <span>
+                      Actionable fixes ranked by impact
+                    </span>
+                  </div>
+                </div>
+              </div>
 
-            {/* Results take 2-5 min */}
-            <p className="mx-auto mt-8 max-w-lg text-center text-xs text-muted-foreground">
-              Results in under 5 minutes
-            </p>
-          </>
-        )}
+              {/* Right: Scan form */}
+              <div className="w-full">
+                <Card>
+                  <CardContent className="space-y-5 pt-2">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="name" className="text-xs text-muted-foreground">
+                        Business Name
+                      </Label>
+                      <Input
+                        id="name"
+                        value={businessName}
+                        onChange={(e) => setBusinessName(e.target.value)}
+                        placeholder="Glow Med Spa"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-[1fr_140px] gap-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="url" className="text-xs text-muted-foreground">
+                          Website
+                        </Label>
+                        <Input
+                          id="url"
+                          value={businessUrl}
+                          onChange={(e) => setBusinessUrl(e.target.value)}
+                          placeholder="glowmedspa.com"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="city" className="text-xs text-muted-foreground">
+                          City
+                        </Label>
+                        <Input
+                          id="city"
+                          value={city}
+                          onChange={(e) => setCity(e.target.value)}
+                          placeholder="Los Angeles"
+                        />
+                      </div>
+                    </div>
+
+                    <Button
+                      onClick={handleScan}
+                      disabled={!businessName || !businessUrl || !city}
+                      className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+                      size="lg"
+                    >
+                      Run AI visibility scan
+                      <ArrowRight className="ml-1 size-3.5" />
+                    </Button>
+
+                    {error && (
+                      <p className="text-sm text-destructive">{error}</p>
+                    )}
+
+                    <p className="text-center font-mono text-[11px] text-muted-foreground/60">
+                      Free scan — results in under 5 minutes
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          )}
+        </div>
       </main>
+
+      {/* Footer */}
+      <footer className="border-t border-border/30 px-6 py-5">
+        <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 sm:flex-row">
+          <p className="font-mono text-[11px] text-muted-foreground/50">
+            Currently scanning: Perplexity AI. ChatGPT and Gemini coming soon.
+          </p>
+          <p className="font-mono text-[11px] text-muted-foreground/40">
+            Neo {new Date().getFullYear()}
+          </p>
+        </div>
+      </footer>
     </div>
   );
 }

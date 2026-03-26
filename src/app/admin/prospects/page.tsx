@@ -4,11 +4,26 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  MapPin,
+  Mail,
+  Send,
+  Star,
+  Globe,
+  Building2,
+  Search,
+  LogOut,
+  LayoutDashboard,
+  Loader2,
+  AlertCircle,
+  CheckCircle2,
+  Hash,
+} from "lucide-react";
 
 interface Prospect {
   id: string;
@@ -29,11 +44,60 @@ interface Prospect {
 type DiscoverStatus = "idle" | "discovering" | "done" | "error";
 
 const STATUS_COLORS: Record<string, string> = {
-  discovered: "bg-gray-100 text-gray-700",
-  scanned: "bg-blue-100 text-blue-700",
-  emailed: "bg-yellow-100 text-yellow-700",
-  signed_up: "bg-emerald-100 text-emerald-700",
+  discovered: "bg-muted text-muted-foreground",
+  scanned: "bg-primary/10 text-primary",
+  emailed: "bg-neo-amber/15 text-neo-amber",
+  signed_up: "bg-primary/15 text-primary font-semibold",
 };
+
+const STATUS_LABELS: Record<string, string> = {
+  discovered: "Discovered",
+  scanned: "Scanned",
+  emailed: "Emailed",
+  signed_up: "Signed Up",
+};
+
+function StarRating({ rating }: { rating: number }) {
+  const full = Math.floor(rating);
+  const hasHalf = rating - full >= 0.25 && rating - full < 0.75;
+  const empty = 5 - full - (hasHalf ? 1 : 0);
+
+  return (
+    <span className="inline-flex items-center gap-0.5">
+      {Array.from({ length: full }).map((_, i) => (
+        <Star
+          key={`f-${i}`}
+          className="size-3 fill-neo-amber text-neo-amber"
+        />
+      ))}
+      {hasHalf && (
+        <Star className="size-3 fill-neo-amber/50 text-neo-amber" />
+      )}
+      {Array.from({ length: empty }).map((_, i) => (
+        <Star key={`e-${i}`} className="size-3 text-muted-foreground/30" />
+      ))}
+      <span className="ml-1 text-xs tabular-nums text-muted-foreground">
+        {rating.toFixed(1)}
+      </span>
+    </span>
+  );
+}
+
+function ScoreBadge({ score }: { score: number | null | undefined }) {
+  if (score == null) return null;
+
+  const grade =
+    score >= 70 ? "score-good" : score >= 40 ? "score-warn" : "score-bad";
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-mono font-medium ${grade}`}
+    >
+      <Hash className="size-2.5" />
+      {score}
+    </span>
+  );
+}
 
 export default function ProspectsPage() {
   const router = useRouter();
@@ -45,6 +109,7 @@ export default function ProspectsPage() {
   const [discoverError, setDiscoverError] = useState("");
   const [prospects, setProspects] = useState<Prospect[]>([]);
   const [sendingIds, setSendingIds] = useState<Set<string>>(new Set());
+  const [emailError, setEmailError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isPending && !session) {
@@ -102,6 +167,7 @@ export default function ProspectsPage() {
 
   async function handleSendEmail(prospectId: string) {
     setSendingIds((prev) => new Set(prev).add(prospectId));
+    setEmailError(null);
 
     try {
       const res = await fetch("/api/prospects/send-email", {
@@ -118,7 +184,9 @@ export default function ProspectsPage() {
       // Refresh prospects to show updated status
       await fetchProspects();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to send email");
+      setEmailError(
+        err instanceof Error ? err.message : "Failed to send email"
+      );
     } finally {
       setSendingIds((prev) => {
         const next = new Set(prev);
@@ -130,70 +198,112 @@ export default function ProspectsPage() {
 
   if (isPending) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
+          <span className="text-sm">Loading...</span>
+        </div>
       </div>
     );
   }
 
   if (!session) return null;
 
+  const statusCounts = prospects.reduce<Record<string, number>>((acc, p) => {
+    acc[p.status] = (acc[p.status] || 0) + 1;
+    return acc;
+  }, {});
+
   return (
-    <div className="min-h-screen">
-      <header className="border-b px-6 py-4">
-        <div className="mx-auto flex max-w-5xl items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-sm font-bold text-white">
-              N
-            </div>
-            <span className="text-lg font-semibold tracking-tight">Neo</span>
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-sm">
+        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
+          <Link
+            href="/"
+            className="text-xl font-semibold tracking-tight text-primary"
+          >
+            neo
           </Link>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1">
             <Link href="/dashboard">
-              <Button variant="outline" size="sm">
+              <Button variant="ghost" size="sm">
+                <LayoutDashboard className="size-3.5" />
                 Dashboard
               </Button>
             </Link>
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={async () => {
                 await authClient.signOut();
                 router.push("/");
               }}
+              className="text-muted-foreground"
             >
+              <LogOut className="size-3.5" />
               Sign out
             </Button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-6 py-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold">Prospect Management</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Discover med spas, find emails, and send outreach
-          </p>
+      <main className="mx-auto max-w-6xl px-6 py-8">
+        {/* Page title */}
+        <div className="mb-8">
+          <div className="flex items-center gap-2.5">
+            <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10">
+              <Building2 className="size-4.5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight">
+                Prospect Management
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Discover med spas, find emails, and send outreach
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Discovery Card */}
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle className="text-base">Discover Med Spas</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <Card className="mb-8 border-border bg-card">
+          <CardContent className="pt-5 pb-5">
+            <div className="mb-4 flex items-center gap-2">
+              <Search className="size-4 text-primary" />
+              <h2 className="text-sm font-semibold">Discover Med Spas</h2>
+            </div>
             <div className="flex items-end gap-3">
-              <div className="flex-1 space-y-2">
-                <Label htmlFor="discover-city">City</Label>
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <Label
+                  htmlFor="discover-city"
+                  className="text-xs text-muted-foreground"
+                >
+                  City
+                </Label>
                 <Input
                   id="discover-city"
                   value={city}
                   onChange={(e) => setCity(e.target.value)}
-                  placeholder="Los Angeles"
+                  placeholder="e.g. Los Angeles, Miami, Austin..."
+                  onKeyDown={(e) => {
+                    if (
+                      e.key === "Enter" &&
+                      city &&
+                      discoverStatus !== "discovering"
+                    ) {
+                      handleDiscover();
+                    }
+                  }}
                 />
               </div>
-              <div className="w-24 space-y-2">
-                <Label htmlFor="discover-limit">Limit</Label>
+              <div className="w-20 space-y-1.5">
+                <Label
+                  htmlFor="discover-limit"
+                  className="text-xs text-muted-foreground"
+                >
+                  Limit
+                </Label>
                 <Input
                   id="discover-limit"
                   type="number"
@@ -206,73 +316,190 @@ export default function ProspectsPage() {
               <Button
                 onClick={handleDiscover}
                 disabled={!city || discoverStatus === "discovering"}
-                className="bg-emerald-600 text-white hover:bg-emerald-500"
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
-                {discoverStatus === "discovering"
-                  ? "Discovering..."
-                  : "Discover"}
+                {discoverStatus === "discovering" ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" />
+                    Discovering...
+                  </>
+                ) : (
+                  <>
+                    <Globe className="size-3.5" />
+                    Discover
+                  </>
+                )}
               </Button>
             </div>
+
+            {/* Status messages */}
             {discoverError && (
-              <p className="mt-2 text-sm text-destructive">{discoverError}</p>
+              <div className="mt-3 flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                <AlertCircle className="size-3.5 shrink-0" />
+                {discoverError}
+              </div>
             )}
             {discoverStatus === "discovering" && (
-              <p className="mt-2 text-sm text-muted-foreground">
+              <div className="mt-3 flex items-center gap-2 rounded-md bg-primary/5 px-3 py-2 text-sm text-muted-foreground">
+                <div className="relative flex size-4 items-center justify-center">
+                  <span className="absolute inline-flex size-3 animate-ping rounded-full bg-primary/30" />
+                  <span className="relative inline-flex size-2 rounded-full bg-primary" />
+                </div>
                 Searching Google Maps and scraping websites for emails. This may
                 take a few minutes...
-              </p>
+              </div>
             )}
             {discoverStatus === "done" && (
-              <p className="mt-2 text-sm text-emerald-600">
-                Discovery complete! Prospects updated below.
-              </p>
+              <div className="mt-3 flex items-center gap-2 rounded-md bg-primary/10 px-3 py-2 text-sm text-primary">
+                <CheckCircle2 className="size-3.5 shrink-0" />
+                Discovery complete. Prospects updated below.
+              </div>
             )}
           </CardContent>
         </Card>
 
+        {/* Email error banner */}
+        {emailError && (
+          <div className="mb-4 flex items-center justify-between gap-2 rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-2.5 text-sm text-destructive">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="size-3.5 shrink-0" />
+              {emailError}
+            </div>
+            <button
+              onClick={() => setEmailError(null)}
+              className="text-xs underline underline-offset-2 opacity-70 hover:opacity-100"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         {/* Prospects List */}
-        <div className="space-y-3">
-          <h2 className="text-lg font-semibold">
-            All Prospects ({prospects.length})
-          </h2>
+        <div>
+          {/* List header */}
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-baseline gap-2">
+              <h2 className="text-sm font-semibold">All Prospects</h2>
+              <span className="text-xs tabular-nums text-muted-foreground">
+                {prospects.length} total
+              </span>
+            </div>
+            {prospects.length > 0 && (
+              <div className="flex items-center gap-2">
+                {Object.entries(statusCounts).map(([status, count]) => (
+                  <span
+                    key={status}
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+                  >
+                    <span
+                      className={`inline-block size-1.5 rounded-full ${
+                        status === "discovered"
+                          ? "bg-muted-foreground"
+                          : status === "scanned"
+                            ? "bg-primary"
+                            : status === "emailed"
+                              ? "bg-neo-amber"
+                              : "bg-primary"
+                      }`}
+                    />
+                    {count} {STATUS_LABELS[status] || status}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
 
           {prospects.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <p className="text-muted-foreground">
-                  No prospects yet. Discover med spas in a city to get started.
+            /* Empty state */
+            <Card className="border-dashed border-border bg-card">
+              <CardContent className="flex flex-col items-center justify-center py-16">
+                <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-muted">
+                  <MapPin className="size-5 text-muted-foreground" />
+                </div>
+                <p className="mb-1 text-sm font-medium">
+                  No prospects yet
+                </p>
+                <p className="text-center text-xs text-muted-foreground">
+                  Enter a city above and hit Discover to find med spas in that
+                  area.
                 </p>
               </CardContent>
             </Card>
           ) : (
-            prospects.map((p) => (
-              <Card key={p.id}>
-                <CardContent className="flex items-center justify-between py-4">
+            /* Prospect rows */
+            <div className="overflow-hidden rounded-xl border border-border bg-card">
+              {prospects.map((p, index) => (
+                <div
+                  key={p.id}
+                  className={`group flex items-center gap-4 px-4 py-3 transition-colors hover:bg-neo-surface ${
+                    index !== 0 ? "border-t border-border" : ""
+                  }`}
+                >
+                  {/* Main content */}
                   <div className="min-w-0 flex-1">
+                    {/* Primary row: name + badge */}
                     <div className="flex items-center gap-2">
-                      <h3 className="truncate font-medium">
+                      <h3 className="truncate text-sm font-medium">
                         {p.business_name}
                       </h3>
                       <Badge
-                        className={
+                        className={`shrink-0 border-0 ${
                           STATUS_COLORS[p.status] || STATUS_COLORS.discovered
-                        }
+                        }`}
                       >
-                        {p.status}
+                        {STATUS_LABELS[p.status] || p.status}
                       </Badge>
                     </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                      <span>{p.city}</span>
-                      {p.rating !== null && <span>{p.rating} stars</span>}
-                      {p.email && <span>{p.email}</span>}
-                      {p.scan_report_id && (
-                        <span className="font-mono text-xs">
-                          Score: {p.recommendation_score ?? "N/A"}
+
+                    {/* Secondary row: metadata */}
+                    <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                        <MapPin className="size-3" />
+                        {p.city}
+                      </span>
+
+                      {p.rating != null && <StarRating rating={p.rating} />}
+
+                      {p.review_count != null && (
+                        <span className="text-xs text-muted-foreground">
+                          ({p.review_count} reviews)
                         </span>
+                      )}
+
+                      {p.email && (
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                          <Mail className="size-3" />
+                          {p.email}
+                        </span>
+                      )}
+
+                      {p.business_url && (
+                        <a
+                          href={p.business_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"
+                        >
+                          <Globe className="size-3" />
+                          Website
+                        </a>
+                      )}
+
+                      {p.scan_report_id && (
+                        <ScoreBadge score={p.recommendation_score} />
                       )}
                     </div>
                   </div>
-                  <div className="ml-4 flex items-center gap-2">
+
+                  {/* Actions */}
+                  <div className="flex shrink-0 items-center gap-2">
+                    {p.scan_report_id && (
+                      <Link href={`/report/${p.scan_report_id}`}>
+                        <Button variant="ghost" size="sm">
+                          View Report
+                        </Button>
+                      </Link>
+                    )}
                     {p.email &&
                       p.status !== "emailed" &&
                       p.status !== "signed_up" && (
@@ -282,15 +509,29 @@ export default function ProspectsPage() {
                           disabled={sendingIds.has(p.id)}
                           onClick={() => handleSendEmail(p.id)}
                         >
-                          {sendingIds.has(p.id)
-                            ? "Sending..."
-                            : "Send Email"}
+                          {sendingIds.has(p.id) ? (
+                            <>
+                              <Loader2 className="size-3 animate-spin" />
+                              Sending...
+                            </>
+                          ) : (
+                            <>
+                              <Send className="size-3" />
+                              Send Email
+                            </>
+                          )}
                         </Button>
                       )}
+                    {p.status === "emailed" && (
+                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                        <CheckCircle2 className="size-3" />
+                        Sent
+                      </span>
+                    )}
                   </div>
-                </CardContent>
-              </Card>
-            ))
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </main>

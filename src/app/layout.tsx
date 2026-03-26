@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Neo — AI Recommendation Capture for Med Spas",
+  title: "Neo — AI Visibility Intelligence for Med Spas",
   description:
-    "See where your med spa ranks across AI search engines and get specific fixes to improve your visibility.",
+    "See where your med spa ranks across AI search engines. Get specific, actionable fixes to improve your visibility in ChatGPT, Perplexity, and more.",
 };
 
 export default function RootLayout({
@@ -26,7 +26,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>

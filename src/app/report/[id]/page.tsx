@@ -1,11 +1,20 @@
 import { getReport, getTotalUsers } from "@/lib/db";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { FREE_SLOTS } from "@/lib/constants";
+import {
+  Trophy,
+  TrendingUp,
+  Eye,
+  EyeOff,
+  Lock,
+  ArrowRight,
+  X,
+  Users,
+  Clock,
+} from "lucide-react";
 
 export default async function ReportPage({
   params,
@@ -19,160 +28,237 @@ export default async function ReportPage({
   const report = row.report_data;
   const totalUsers = await getTotalUsers();
   const slotsLeft = Math.max(0, FREE_SLOTS - totalUsers);
+  const fixCount = report.fixes?.length || 0;
 
   return (
-    <div className="min-h-screen">
-      <header className="border-b px-6 py-4">
-        <div className="mx-auto flex max-w-4xl items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-sm font-bold text-white">
-              N
-            </div>
-            <span className="text-lg font-semibold tracking-tight">Neo</span>
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="border-b border-border/50 px-6 py-4">
+        <div className="mx-auto flex max-w-3xl items-center justify-between">
+          <Link href="/" className="flex items-center gap-1.5">
+            <span className="text-lg font-semibold tracking-tight text-primary">
+              neo
+            </span>
           </Link>
           <div className="flex items-center gap-3">
             {slotsLeft > 0 && (
-              <Badge variant="secondary" className="text-xs">
+              <Badge variant="secondary" className="font-mono text-xs">
                 {slotsLeft} free slots left
               </Badge>
             )}
             <Link href="/sign-up">
-              <Button size="sm" className="bg-emerald-600 text-white hover:bg-emerald-500">
+              <Button size="sm">
                 Sign up free
+                <ArrowRight data-icon="inline-end" className="size-3.5" />
               </Button>
             </Link>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-4xl px-6 py-12">
-        <div className="space-y-6">
-          {/* Header */}
+      <main className="mx-auto max-w-3xl px-6 py-12">
+        <div className="space-y-10">
+          {/* Business Identity */}
           <div>
-            <h1 className="text-2xl font-semibold">{report.businessName}</h1>
-            <p className="text-muted-foreground">{report.city}</p>
+            <p className="mb-1.5 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+              AI Visibility Report
+            </p>
+            <h1 className="text-3xl font-semibold tracking-tight">
+              {report.businessName}
+            </h1>
+            <p className="mt-1 text-base text-muted-foreground">
+              {report.city}
+            </p>
           </div>
 
           {/* Score Cards */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <ScoreCard
+              icon={<Trophy className="size-4" />}
               label="Recommendation Score"
               value={report.recommendationScore}
               suffix="/100"
-              grade={report.recommendationScore >= 30 ? "good" : report.recommendationScore >= 10 ? "warn" : "bad"}
+              grade={
+                report.recommendationScore >= 30
+                  ? "good"
+                  : report.recommendationScore >= 10
+                    ? "warn"
+                    : "bad"
+              }
             />
             <ScoreCard
+              icon={<TrendingUp className="size-4" />}
               label="Share of Voice"
               value={report.shareOfVoice}
               suffix="%"
-              grade={report.shareOfVoice >= 20 ? "good" : report.shareOfVoice >= 5 ? "warn" : "bad"}
+              grade={
+                report.shareOfVoice >= 20
+                  ? "good"
+                  : report.shareOfVoice >= 5
+                    ? "warn"
+                    : "bad"
+              }
             />
             <ScoreCard
+              icon={<Eye className="size-4" />}
               label="Queries Visible"
               value={report.strongQueries.length}
               suffix={`/${report.strongQueries.length + report.gapQueries.length}`}
-              grade={report.strongQueries.length >= 15 ? "good" : report.strongQueries.length >= 5 ? "warn" : "bad"}
+              grade={
+                report.strongQueries.length >= 15
+                  ? "good"
+                  : report.strongQueries.length >= 5
+                    ? "warn"
+                    : "bad"
+              }
             />
           </div>
 
           {/* Summary */}
-          <Card>
-            <CardContent className="pt-6">
-              <p className="text-sm text-muted-foreground">{report.summary}</p>
-            </CardContent>
-          </Card>
+          <div className="border-l-2 border-primary/40 pl-5">
+            <p className="text-[0.9375rem] leading-relaxed text-muted-foreground">
+              {report.summary}
+            </p>
+          </div>
 
-          {/* Competitors - visible */}
+          {/* Competitors */}
           {report.competitorMentions?.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Top Competitors in AI Search</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {report.competitorMentions.slice(0, 5).map((comp: { name: string; mentionCount: number }, i: number) => (
-                  <div key={comp.name} className="flex items-center justify-between rounded-md bg-muted px-3 py-2">
-                    <span className="text-sm">
-                      <span className="mr-2 font-mono text-xs text-muted-foreground">#{i + 1}</span>
-                      {comp.name}
-                    </span>
-                    <Badge variant="secondary" className="font-mono text-xs">{comp.mentionCount} mentions</Badge>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
+            <section className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Users className="size-4 text-muted-foreground" />
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                  Top Competitors in AI Search
+                </h2>
+              </div>
+              <ol className="space-y-1">
+                {report.competitorMentions
+                  .slice(0, 5)
+                  .map(
+                    (
+                      comp: { name: string; mentionCount: number },
+                      i: number
+                    ) => (
+                      <li
+                        key={comp.name}
+                        className="flex items-center justify-between rounded-lg px-4 py-2.5 transition-colors hover:bg-neo-surface"
+                      >
+                        <span className="flex items-center gap-3 text-sm">
+                          <span className="w-6 text-right font-mono text-xs text-muted-foreground">
+                            {i + 1}
+                          </span>
+                          <span className="font-medium">{comp.name}</span>
+                        </span>
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {comp.mentionCount}{" "}
+                          {comp.mentionCount === 1 ? "mention" : "mentions"}
+                        </span>
+                      </li>
+                    )
+                  )}
+              </ol>
+            </section>
           )}
 
-          {/* Gap Queries - visible */}
+          {/* Gap Queries */}
           {report.gapQueries?.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
+            <section className="space-y-4">
+              <div className="flex items-center gap-2">
+                <EyeOff className="size-4 text-muted-foreground" />
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                   Invisible Queries
-                  <Badge variant="destructive" className="ml-2">{report.gapQueries.length}</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1.5">
-                {report.gapQueries.slice(0, 5).map((query: string) => (
-                  <div key={query} className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <span className="text-destructive">x</span>
-                    <span>&ldquo;{query}&rdquo;</span>
-                  </div>
-                ))}
-                {report.gapQueries.length > 5 && (
-                  <p className="text-sm text-muted-foreground">
-                    + {report.gapQueries.length - 5} more hidden queries
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+                </h2>
+                <Badge variant="destructive" className="ml-1 font-mono">
+                  {report.gapQueries.length}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {report.gapQueries
+                  .slice(0, 8)
+                  .map((query: string) => (
+                    <div
+                      key={query}
+                      className="flex items-center gap-2.5 rounded-lg bg-neo-surface px-3.5 py-2.5"
+                    >
+                      <X className="size-3.5 shrink-0 text-neo-coral" />
+                      <span className="text-sm text-muted-foreground">
+                        &ldquo;{query}&rdquo;
+                      </span>
+                    </div>
+                  ))}
+              </div>
+              {report.gapQueries.length > 8 && (
+                <p className="text-sm text-muted-foreground">
+                  + {report.gapQueries.length - 8} more queries where you are
+                  not visible
+                </p>
+              )}
+            </section>
           )}
 
-          <Separator />
+          {/* Divider */}
+          <div className="border-t border-border/50" />
 
           {/* GATED: Fix Recommendations */}
-          <Card className="relative overflow-hidden">
-            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/80 backdrop-blur-sm">
-              <div className="text-center">
-                <h3 className="mb-2 text-lg font-semibold">
-                  {report.fixes?.length || 0} Fix Recommendations Available
+          <section className="relative overflow-hidden rounded-xl border border-border/50 bg-card">
+            {/* Blur overlay */}
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/70 backdrop-blur-md">
+              <div className="mx-auto max-w-sm text-center">
+                <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-neo-teal-muted">
+                  <Lock className="size-5 text-primary" />
+                </div>
+                <h3 className="mb-2 text-xl font-semibold tracking-tight">
+                  Unlock {fixCount} Fix{fixCount !== 1 ? "s" : ""}
                 </h3>
-                <p className="mb-4 max-w-sm text-sm text-muted-foreground">
-                  Sign up to see exactly how to improve your AI visibility with specific, actionable fixes.
+                <p className="mb-5 text-sm leading-relaxed text-muted-foreground">
+                  Get specific, actionable recommendations to improve your AI
+                  search visibility.
                 </p>
+                <Link href="/sign-up">
+                  <Button size="lg">
+                    Sign up to unlock
+                    <ArrowRight data-icon="inline-end" className="size-4" />
+                  </Button>
+                </Link>
                 {slotsLeft > 0 && (
-                  <p className="mb-3 text-sm font-medium text-emerald-600">
+                  <p className="mt-3 text-xs text-muted-foreground">
                     {slotsLeft} of {FREE_SLOTS} free slots remaining
                   </p>
                 )}
-                <Link href="/sign-up">
-                  <Button className="bg-emerald-600 text-white hover:bg-emerald-500">
-                    Sign up to unlock fixes
-                  </Button>
-                </Link>
               </div>
             </div>
-            <CardContent className="space-y-3 pt-6">
+
+            {/* Skeleton placeholders behind blur */}
+            <div className="space-y-4 p-6">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="rounded-lg border p-4">
-                  <div className="mb-2 flex gap-2">
-                    <div className="h-5 w-12 rounded bg-muted" />
-                    <div className="h-5 w-16 rounded bg-muted" />
+                <div
+                  key={i}
+                  className="space-y-2.5 rounded-lg border border-border/50 bg-neo-surface p-5"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="h-5 w-16 rounded-md bg-muted" />
+                    <div className="h-5 w-20 rounded-md bg-muted" />
                   </div>
-                  <div className="mb-1 h-5 w-3/4 rounded bg-muted" />
-                  <div className="h-4 w-full rounded bg-muted" />
-                  <div className="mt-1 h-4 w-2/3 rounded bg-muted" />
+                  <div className="h-5 w-4/5 rounded-md bg-muted" />
+                  <div className="space-y-1.5">
+                    <div className="h-4 w-full rounded-md bg-muted/70" />
+                    <div className="h-4 w-3/5 rounded-md bg-muted/70" />
+                  </div>
                 </div>
               ))}
-            </CardContent>
-          </Card>
+            </div>
+          </section>
 
-          <div className="text-center font-mono text-xs text-muted-foreground">
-            Scanned on{" "}
-            {new Date(report.timestamp).toLocaleDateString("en-US", {
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-            })}
+          {/* Footer timestamp */}
+          <div className="flex items-center justify-center gap-1.5 text-center">
+            <Clock className="size-3 text-muted-foreground" />
+            <span className="font-mono text-xs text-muted-foreground">
+              Scanned{" "}
+              {new Date(report.timestamp).toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              })}
+            </span>
           </div>
         </div>
       </main>
@@ -180,32 +266,53 @@ export default async function ReportPage({
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/*  ScoreCard                                                                  */
+/* -------------------------------------------------------------------------- */
+
+const BORDER_COLORS = {
+  good: "border-t-neo-teal",
+  warn: "border-t-neo-amber",
+  bad: "border-t-neo-coral",
+} as const;
+
+const SCORE_CLASSES = {
+  good: "score-good",
+  warn: "score-warn",
+  bad: "score-bad",
+} as const;
+
 function ScoreCard({
+  icon,
   label,
   value,
   suffix,
   grade,
 }: {
+  icon: React.ReactNode;
   label: string;
   value: number;
   suffix: string;
   grade: "good" | "warn" | "bad";
 }) {
-  const colors = {
-    good: "text-emerald-600",
-    warn: "text-yellow-600",
-    bad: "text-red-600",
-  };
-
   return (
-    <Card>
-      <CardContent className="py-4 text-center">
-        <div className={`text-3xl font-bold tabular-nums ${colors[grade]}`}>
+    <div
+      className={`rounded-xl border-t-2 bg-card px-4 py-5 ring-1 ring-foreground/10 ${BORDER_COLORS[grade]}`}
+    >
+      <div className="mb-3 flex items-center gap-1.5 text-muted-foreground">
+        {icon}
+        <span className="text-xs font-medium">{label}</span>
+      </div>
+      <div className="flex items-baseline gap-1">
+        <span
+          className={`font-mono text-3xl font-semibold tabular-nums ${SCORE_CLASSES[grade]}`}
+        >
           {value}
-          <span className="text-base font-normal text-muted-foreground">{suffix}</span>
-        </div>
-        <div className="mt-1 text-xs text-muted-foreground">{label}</div>
-      </CardContent>
-    </Card>
+        </span>
+        <span className="font-mono text-sm text-muted-foreground">
+          {suffix}
+        </span>
+      </div>
+    </div>
   );
 }
