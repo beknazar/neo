@@ -109,7 +109,7 @@ export async function generateFixes(
   }
 
   // Technical SEO for sites that aren't being cited
-  if (report.strongQueries.length < report.gapQueries.length) {
+  if (report.strongQueries.length < report.gapQueries.length && report.recommendationScore >= 20) {
     fixes.push({
       category: "Technical",
       title: "Add structured data to every service page",
@@ -138,10 +138,12 @@ function generateFAQSuggestions(
     // Transform gap queries into natural FAQ format
     const lower = q.toLowerCase();
     if (lower.startsWith("best ") || lower.startsWith("top ")) {
-      return `What makes ${businessName} one of the ${lower} in ${city}?`;
+      const cleaned = lower.replace(city.toLowerCase(), "").replace(/\b(best|top)\b/g, "").trim();
+      return `What makes ${businessName} one of the best ${cleaned || "options"} in ${city}?`;
     }
     if (lower.includes("cost") || lower.includes("price")) {
-      return `How much does ${lower.replace(city.toLowerCase(), "").trim()} cost at ${businessName}?`;
+      const cleaned = lower.replace(city.toLowerCase(), "").replace(/\b(cost|price|pricing|how much)\b/g, "").trim();
+      return `How much does ${cleaned || "treatment"} cost at ${businessName}?`;
     }
     return `What should I know about ${lower} at ${businessName} in ${city}?`;
   });
@@ -192,7 +194,7 @@ function generateSummary(
   } else if (score >= 30) {
     benchmark = `Most med spas in ${report.city} score between 15-35. ${report.businessName} is in that range — meaning you're visible but not standing out.`;
   } else {
-    benchmark = `Most med spas in ${report.city} score between 15-35. At ${score}, ${report.businessName} is below average — AI engines are recommending your competitors instead.`;
+    benchmark = `Most med spas in ${report.city} score between 15-35. At ${score}, ${report.businessName} has room to improve with targeted optimization.`;
   }
 
   return `${report.businessName} has a ${grade.toLowerCase()} AI visibility score of ${score}/100 in ${report.city}. ${benchmark} You appear in ${strengths} out of ${totalQueries} query categories and are invisible in ${gaps}. Your share of voice is ${report.shareOfVoice}% compared to competitors. There are ${highPriorityFixes} high-priority fixes below — start with the ones marked "high priority" to see the fastest improvement.`;
