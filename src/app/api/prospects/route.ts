@@ -3,8 +3,8 @@ import { getProspects } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin";
 
 export async function GET(request: Request) {
-  const check = await requireAdmin(request);
-  if (!check.authorized) {
+  const adminCheck = await requireAdmin(request);
+  if (!adminCheck.authorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 

@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { discoverBusinesses, findEmailFromWebsite } from "@/lib/prospects";
 import { saveProspect } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin";
+import { PROSPECT_STATUS } from "@/lib/constants";
 
 export const maxDuration = 300;
 
 export async function POST(request: Request) {
-  const check = await requireAdmin(request);
-  if (!check.authorized) {
+  const adminCheck = await requireAdmin(request);
+  if (!adminCheck.authorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const discovered = await discoverBusinesses(city, vertical || "med spa", limit || 10);
+    const discovered = await discoverBusinesses(city, vertical, limit || 10);
 
     // 2. Find emails in parallel batches, then save once per prospect
     const CONCURRENCY = 5;
@@ -44,9 +45,9 @@ export async function POST(request: Request) {
           reviewCount: biz.reviewCount,
           address: biz.address,
           email,
-          status: "discovered",
+          status: PROSPECT_STATUS.DISCOVERED,
         });
-        return { id: prospectId, ...biz, email, city, status: "discovered" as const };
+        return { id: prospectId, ...biz, email, city, status: PROSPECT_STATUS.DISCOVERED };
       }));
       prospects.push(...results);
     }

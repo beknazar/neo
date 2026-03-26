@@ -9,7 +9,7 @@ import { USER_AGENT } from "@/lib/constants";
 
 // --- Types ---
 
-export interface DiscoveredMedSpa {
+export interface DiscoveredBusiness {
   businessName: string;
   businessUrl: string;
   phone: string | null;
@@ -44,28 +44,28 @@ interface ApifyDatasetItem {
 const APIFY_ACTOR_ID = "nwua9Gu5YrADL7ZDj";
 const APIFY_BASE_URL = "https://api.apify.com/v2";
 
+// Parse token pool once at module load — not on every request
+const APIFY_TOKEN_POOL: string[] =
+  process.env.APIFY_TOKENS?.split(",").map((t) => t.trim()).filter(Boolean) ?? [];
+
 function getApifyToken(): string {
-  // Support rotating through multiple tokens
-  const tokens = process.env.APIFY_TOKENS?.split(",").map(t => t.trim()).filter(Boolean);
-  if (tokens && tokens.length > 0) {
-    // Random rotation — distributes load across tokens
-    return tokens[Math.floor(Math.random() * tokens.length)];
+  if (APIFY_TOKEN_POOL.length > 0) {
+    return APIFY_TOKEN_POOL[Math.floor(Math.random() * APIFY_TOKEN_POOL.length)];
   }
-  // Fallback to single token
   const token = process.env.APIFY_TOKEN;
   if (!token) throw new Error("APIFY_TOKENS or APIFY_TOKEN must be set");
   return token;
 }
 
 /**
- * Discover med spas in a city using Apify Google Maps Scraper.
- * Starts an actor run, polls until complete, then fetches results.
+ * Discover businesses in a city using Apify Google Maps Scraper.
+ * Accepts a vertical (e.g. "dentist", "personal injury lawyer") to customize the search.
  */
 export async function discoverBusinesses(
   city: string,
   vertical: string = "med spa",
   limit: number = 20
-): Promise<DiscoveredMedSpa[]> {
+): Promise<DiscoveredBusiness[]> {
   const token = getApifyToken();
 
   // 1. Start the actor run
