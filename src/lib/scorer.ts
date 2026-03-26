@@ -189,7 +189,9 @@ function extractBusinessNames(response: string): string[] {
       /[A-Z]/.test(name) &&
       name.split(/\s+/).length <= 6
     ) {
-      names.push(name);
+      // Strip any HTML tags from extracted names
+      const cleanName = name.replace(/<[^>]*>/g, "").trim();
+      if (cleanName.length > 2) names.push(cleanName);
     }
   }
   return names;

@@ -12,11 +12,27 @@ export const maxDuration = 300;
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { businessName, businessUrl, city, competitors } = body;
+
+    // Sanitize inputs
+    const sanitize = (s: string, maxLen: number) =>
+      s.replace(/<[^>]*>/g, "").trim().slice(0, maxLen);
+
+    const businessName = sanitize(body.businessName || "", 120);
+    const businessUrl = (body.businessUrl || "").trim().slice(0, 200);
+    const city = sanitize(body.city || "", 60);
+    const competitors = body.competitors;
 
     if (!businessName || !businessUrl || !city) {
       return NextResponse.json(
         { error: "businessName, businessUrl, and city are required" },
+        { status: 400 }
+      );
+    }
+
+    // Validate URL format
+    if (!/^(https?:\/\/)?[\w.-]+\.\w{2,}/.test(businessUrl)) {
+      return NextResponse.json(
+        { error: "Invalid website URL" },
         { status: 400 }
       );
     }
