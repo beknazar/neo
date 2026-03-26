@@ -351,10 +351,10 @@ export default function Home() {
       {/* Footer */}
       <footer className="border-t border-border/30 px-6 py-5">
         <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 sm:flex-row">
-          <p className="font-mono text-[11px] text-muted-foreground/50">
+          <p className="font-mono text-[11px] text-muted-foreground/70">
             Currently scanning: Perplexity AI. ChatGPT &amp; Gemini coming soon.
           </p>
-          <p className="font-mono text-[11px] text-muted-foreground/40">
+          <p className="font-mono text-[11px] text-muted-foreground/60">
             Neo {CURRENT_YEAR}
           </p>
         </div>
