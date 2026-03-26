@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { getProspects } from "@/lib/db";
+import { requireAdmin } from "@/lib/admin";
 
 export async function GET(request: Request) {
+  const check = await requireAdmin(request);
+  if (!check.authorized) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const city = searchParams.get("city") || undefined;

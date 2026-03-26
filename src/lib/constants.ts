@@ -22,5 +22,9 @@ export const APP_URL =
     ? `https://${process.env.VERCEL_URL}`
     : "http://localhost:3000");
 
+export const ADMIN_EMAILS = new Set([
+  "tradingbek@gmail.com",
+]);
+
 export const USER_AGENT =
   "Mozilla/5.0 (compatible; NeoBot/1.0)";

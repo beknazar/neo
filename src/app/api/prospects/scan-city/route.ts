@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { discoverBusinesses, findEmailFromWebsite } from "@/lib/prospects";
 import { saveProspect } from "@/lib/db";
+import { requireAdmin } from "@/lib/admin";
 
 export const maxDuration = 300;
 
 export async function POST(request: Request) {
+  const check = await requireAdmin(request);
+  if (!check.authorized) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  }
+
   try {
     const body = await request.json();
     const { city, limit, vertical } = body;

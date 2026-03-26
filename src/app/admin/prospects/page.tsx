@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
 import { useRequireAuth } from "@/hooks/use-require-auth";
-import { PROSPECT_STATUS, type ProspectStatus } from "@/lib/constants";
+import { PROSPECT_STATUS, type ProspectStatus, ADMIN_EMAILS } from "@/lib/constants";
 import { scoreGrade, gradeClass } from "@/lib/scoring";
 import { NeoLogo } from "@/components/neo-logo";
 import { Card, CardContent } from "@/components/ui/card";
@@ -209,6 +209,12 @@ export default function ProspectsPage() {
   }
 
   if (!session) return null;
+
+  const isAdmin = ADMIN_EMAILS.has(session.user.email);
+  if (!isAdmin) {
+    router.push("/dashboard");
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-background">

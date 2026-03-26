@@ -9,10 +9,16 @@ import {
 } from "@/lib/db";
 import { generateOutreachEmail } from "@/lib/email-templates";
 import { FREE_SLOTS, APP_URL } from "@/lib/constants";
+import { requireAdmin } from "@/lib/admin";
 
 const execFileAsync = promisify(execFile);
 
 export async function POST(request: Request) {
+  const adminCheck = await requireAdmin(request);
+  if (!adminCheck.authorized) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  }
+
   try {
     const body = await request.json();
     const { prospectId } = body;
