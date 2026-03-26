@@ -44,17 +44,53 @@ interface ApifyDatasetItem {
 const APIFY_ACTOR_ID = "nwua9Gu5YrADL7ZDj";
 const APIFY_BASE_URL = "https://api.apify.com/v2";
 
-// Parse token pool once at module load — not on every request
+// --- Token Management (state machine with monthly reset) ---
+
 const APIFY_TOKEN_POOL: string[] =
   process.env.APIFY_TOKENS?.split(",").map((t) => t.trim()).filter(Boolean) ?? [];
 
-function getApifyToken(): string {
-  if (APIFY_TOKEN_POOL.length > 0) {
-    return APIFY_TOKEN_POOL[Math.floor(Math.random() * APIFY_TOKEN_POOL.length)];
+// Track exhausted tokens: token → month when it was exhausted (resets monthly)
+const exhaustedTokens = new Map<string, number>();
+
+function currentMonth(): number {
+  const d = new Date();
+  return d.getFullYear() * 12 + d.getMonth();
+}
+
+function markExhausted(token: string): void {
+  exhaustedTokens.set(token, currentMonth());
+}
+
+function isExhausted(token: string): boolean {
+  const month = exhaustedTokens.get(token);
+  if (!month) return false;
+  // Reset if we're in a new month
+  if (month < currentMonth()) {
+    exhaustedTokens.delete(token);
+    return false;
   }
-  const token = process.env.APIFY_TOKEN;
-  if (!token) throw new Error("APIFY_TOKENS or APIFY_TOKEN must be set");
-  return token;
+  return true;
+}
+
+function getAvailableTokens(): string[] {
+  if (APIFY_TOKEN_POOL.length === 0) {
+    const token = process.env.APIFY_TOKEN;
+    return token ? [token] : [];
+  }
+  const available = APIFY_TOKEN_POOL.filter((t) => !isExhausted(t));
+  return available;
+}
+
+function getApifyToken(): string {
+  const available = getAvailableTokens();
+  if (available.length === 0) {
+    const total = APIFY_TOKEN_POOL.length || 1;
+    const exhausted = exhaustedTokens.size;
+    throw new Error(
+      `All ${total} Apify tokens are exhausted this month (${exhausted} used). Tokens reset on the 1st.`
+    );
+  }
+  return available[Math.floor(Math.random() * available.length)];
 }
 
 /**
@@ -66,56 +102,72 @@ export async function discoverBusinesses(
   vertical: string = "med spa",
   limit: number = 20
 ): Promise<DiscoveredBusiness[]> {
-  const token = getApifyToken();
-
-  // 1. Start the actor run
   const searchQuery = `${vertical} in ${city}`;
-  const runRes = await fetch(
-    `${APIFY_BASE_URL}/acts/${APIFY_ACTOR_ID}/runs?token=${token}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        searchStringsArray: [searchQuery],
-        maxCrawledPlacesPerSearch: limit,
-      }),
+  const maxRetries = Math.min(getAvailableTokens().length, 10);
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const token = getApifyToken();
+
+    // 1. Start the actor run
+    const runRes = await fetch(
+      `${APIFY_BASE_URL}/acts/${APIFY_ACTOR_ID}/runs?token=${token}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          searchStringsArray: [searchQuery],
+          maxCrawledPlacesPerSearch: limit,
+        }),
+      }
+    );
+
+    if (!runRes.ok) {
+      const text = await runRes.text();
+      // 401 = invalid token, 403 = quota exceeded — mark and retry
+      if (runRes.status === 401 || runRes.status === 403) {
+        markExhausted(token);
+        console.warn(
+          `Apify token exhausted (${runRes.status}), ${getAvailableTokens().length} tokens remaining. Retrying...`
+        );
+        continue;
+      }
+      throw new Error(`Apify run start failed (${runRes.status}): ${text}`);
     }
-  );
 
-  if (!runRes.ok) {
-    const text = await runRes.text();
-    throw new Error(`Apify run start failed (${runRes.status}): ${text}`);
+    const runData: ApifyRunResponse = await runRes.json();
+    const runId = runData.data.id;
+    const datasetId = runData.data.defaultDatasetId;
+
+    // 2. Poll until run completes
+    await pollRunCompletion(runId, token);
+
+    // 3. Fetch dataset items
+    const itemsRes = await fetch(
+      `${APIFY_BASE_URL}/datasets/${datasetId}/items?token=${token}`
+    );
+
+    if (!itemsRes.ok) {
+      const text = await itemsRes.text();
+      throw new Error(`Apify dataset fetch failed (${itemsRes.status}): ${text}`);
+    }
+
+    const items: ApifyDatasetItem[] = await itemsRes.json();
+
+    return items
+      .filter((item) => item.title)
+      .map((item) => ({
+        businessName: item.title!,
+        businessUrl: item.website || item.url || "",
+        phone: item.phone || null,
+        rating: item.totalScore ?? null,
+        reviewCount: item.reviewsCount ?? null,
+        address: item.address || null,
+      }));
   }
 
-  const runData: ApifyRunResponse = await runRes.json();
-  const runId = runData.data.id;
-  const datasetId = runData.data.defaultDatasetId;
-
-  // 2. Poll until run completes
-  await pollRunCompletion(runId, token);
-
-  // 3. Fetch dataset items
-  const itemsRes = await fetch(
-    `${APIFY_BASE_URL}/datasets/${datasetId}/items?token=${token}`
+  throw new Error(
+    `All Apify tokens exhausted after ${maxRetries} attempts. ${exhaustedTokens.size} tokens hit their monthly limit. Tokens reset on the 1st.`
   );
-
-  if (!itemsRes.ok) {
-    const text = await itemsRes.text();
-    throw new Error(`Apify dataset fetch failed (${itemsRes.status}): ${text}`);
-  }
-
-  const items: ApifyDatasetItem[] = await itemsRes.json();
-
-  return items
-    .filter((item) => item.title)
-    .map((item) => ({
-      businessName: item.title!,
-      businessUrl: item.website || item.url || "",
-      phone: item.phone || null,
-      rating: item.totalScore ?? null,
-      reviewCount: item.reviewsCount ?? null,
-      address: item.address || null,
-    }));
 }
 
 /**
