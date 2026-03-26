@@ -45,8 +45,15 @@ const APIFY_ACTOR_ID = "nwua9Gu5YrADL7ZDj";
 const APIFY_BASE_URL = "https://api.apify.com/v2";
 
 function getApifyToken(): string {
+  // Support rotating through multiple tokens
+  const tokens = process.env.APIFY_TOKENS?.split(",").map(t => t.trim()).filter(Boolean);
+  if (tokens && tokens.length > 0) {
+    // Random rotation — distributes load across tokens
+    return tokens[Math.floor(Math.random() * tokens.length)];
+  }
+  // Fallback to single token
   const token = process.env.APIFY_TOKEN;
-  if (!token) throw new Error("APIFY_TOKEN is not set");
+  if (!token) throw new Error("APIFY_TOKENS or APIFY_TOKEN must be set");
   return token;
 }
 

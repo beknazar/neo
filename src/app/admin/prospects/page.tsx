@@ -29,6 +29,19 @@ import {
   Hash,
 } from "lucide-react";
 
+const US_CITIES = [
+  "New York", "Los Angeles", "Chicago", "Houston", "Phoenix",
+  "Philadelphia", "San Antonio", "San Diego", "Dallas", "Austin",
+  "San Jose", "Jacksonville", "Fort Worth", "Columbus", "Charlotte",
+  "Indianapolis", "San Francisco", "Seattle", "Denver", "Nashville",
+  "Washington DC", "Oklahoma City", "El Paso", "Boston", "Portland",
+  "Las Vegas", "Memphis", "Louisville", "Baltimore", "Milwaukee",
+  "Albuquerque", "Tucson", "Fresno", "Sacramento", "Mesa",
+  "Kansas City", "Atlanta", "Omaha", "Colorado Springs", "Raleigh",
+  "Long Beach", "Virginia Beach", "Miami", "Oakland", "Minneapolis",
+  "Tampa", "Tulsa", "Arlington", "New Orleans", "Cleveland",
+];
+
 interface Prospect {
   id: string;
   business_name: string;
@@ -257,7 +270,7 @@ export default function ProspectsPage() {
                 Prospect Management
               </h1>
               <p className="text-sm text-muted-foreground">
-                Discover med spas, find emails, and send outreach
+                Discover businesses, find emails, and send outreach
               </p>
             </div>
           </div>
@@ -299,7 +312,8 @@ export default function ProspectsPage() {
                   id="discover-city"
                   value={city}
                   onChange={(e) => setCity(e.target.value)}
-                  placeholder="e.g. Los Angeles, Miami, Austin..."
+                  placeholder="Start typing a city..."
+                  list="city-list"
                   onKeyDown={(e) => {
                     if (
                       e.key === "Enter" &&
@@ -310,6 +324,11 @@ export default function ProspectsPage() {
                     }
                   }}
                 />
+                <datalist id="city-list">
+                  {US_CITIES.map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
               </div>
               <div className="w-20 space-y-1.5">
                 <Label
@@ -427,7 +446,7 @@ export default function ProspectsPage() {
                   No prospects yet
                 </p>
                 <p className="text-center text-xs text-muted-foreground">
-                  Enter a city above and hit Discover to find med spas in that
+                  Enter a city above and hit Discover to find businesses in that
                   area.
                 </p>
               </CardContent>
