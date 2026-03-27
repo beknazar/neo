@@ -35,7 +35,7 @@ export async function GET(request: Request) {
          es.clicked_at,
          es.id AS send_id
        FROM email_sends es
-       WHERE es.prospect_id = ANY($1::uuid[])
+       WHERE es.prospect_id = ANY($1::text[])
        ORDER BY es.prospect_id, es.id DESC`,
       [prospectIds]
     );
@@ -46,7 +46,7 @@ export async function GET(request: Request) {
     if (sendIds.length > 0) {
       const bounceResult = await query(
         `SELECT DISTINCT email_send_id FROM email_events
-         WHERE email_send_id = ANY($1::uuid[])
+         WHERE email_send_id = ANY($1::text[])
            AND event_type IN ('email.bounced', 'email.complained')`,
         [sendIds]
       );
