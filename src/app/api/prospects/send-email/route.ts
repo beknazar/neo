@@ -11,7 +11,7 @@ import {
   generateOutreachEmail,
   addUnsubscribeFooter,
 } from "@/lib/email-templates";
-import { FREE_SLOTS, APP_URL, FREE_QUERY_COUNT, FREE_RUNS_PER_QUERY } from "@/lib/constants";
+import { FREE_SLOTS, APP_URL, FREE_QUERY_COUNT, FREE_RUNS_PER_QUERY, PROSPECT_STATUS } from "@/lib/constants";
 import { requireAdmin } from "@/lib/admin";
 import { randomUUID } from "crypto";
 import { runScanForBusiness } from "@/lib/scanner";
@@ -141,7 +141,7 @@ export async function POST(request: Request) {
         unsubscribeToken: unsubToken,
       });
 
-      await updateProspectStatus(prospectId, "emailed");
+      await updateProspectStatus(prospectId, PROSPECT_STATUS.EMAILED);
     } catch (dbError) {
       console.error(
         "Email sent successfully but failed to save to database:",

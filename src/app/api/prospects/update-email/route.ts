@@ -29,15 +29,6 @@ export async function PATCH(request: Request) {
 
     const trimmed = email.trim().toLowerCase();
 
-    // Basic format validation
-    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-    if (!emailRegex.test(trimmed)) {
-      return NextResponse.json(
-        { error: "Invalid email format" },
-        { status: 400 }
-      );
-    }
-
     // Verify prospect exists
     const prospectResult = await query(
       "SELECT id FROM prospects WHERE id = $1",

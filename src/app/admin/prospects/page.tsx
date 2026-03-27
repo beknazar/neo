@@ -135,7 +135,7 @@ export default function ProspectsPage() {
     subject: string;
     body: string;
   } | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewingId, setPreviewingId] = useState<string | null>(null);
   const [editingEmailId, setEditingEmailId] = useState<string | null>(null);
   const [editingEmailValue, setEditingEmailValue] = useState("");
   const [emailSaving, setEmailSaving] = useState(false);
@@ -176,8 +176,8 @@ export default function ProspectsPage() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Discovery failed");
+        const errData = await res.json();
+        throw new Error(errData.error || "Discovery failed");
       }
 
       const data = await res.json();
@@ -195,7 +195,7 @@ export default function ProspectsPage() {
   }
 
   async function handlePreviewEmail(prospectId: string) {
-    setPreviewLoading(true);
+    setPreviewingId(prospectId);
     setEmailError(null);
 
     const prospect = prospects.find((p) => p.id === prospectId);
@@ -220,7 +220,7 @@ export default function ProspectsPage() {
         err instanceof Error ? err.message : "Failed to load preview"
       );
     } finally {
-      setPreviewLoading(false);
+      setPreviewingId(null);
     }
   }
 
@@ -740,10 +740,10 @@ export default function ProspectsPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={previewLoading}
+                          disabled={previewingId === p.id}
                           onClick={() => handlePreviewEmail(p.id)}
                         >
-                          {previewLoading ? (
+                          {previewingId === p.id ? (
                             <>
                               <Loader2 className="size-3 animate-spin" />
                               Loading...

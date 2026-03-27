@@ -480,18 +480,14 @@ describe("guessEmailByPattern", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns first MX-valid email from pattern list", async () => {
+  it("returns info@ when domain has valid MX records", async () => {
     const dns = await import("dns");
-    // First call (info@) fails, second call (hello@) succeeds
-    let callCount = 0;
-    vi.spyOn(dns.promises, "resolveMx").mockImplementation(() => {
-      callCount++;
-      if (callCount === 1) return Promise.resolve([]); // info@ fails
-      return Promise.resolve([{ exchange: "mx.coolbiz.com", priority: 10 }]);
-    });
+    vi.spyOn(dns.promises, "resolveMx").mockResolvedValue([
+      { exchange: "mx.coolbiz.com", priority: 10 },
+    ]);
 
     const result = await guessEmailByPattern("https://coolbiz.com");
-    expect(result).toBe("hello@coolbiz.com");
+    expect(result).toBe("info@coolbiz.com");
   });
 
   it("skips aggregator domains (yelp.com, facebook.com)", async () => {

@@ -522,6 +522,27 @@ function isLikelyRealEmail(email: string): boolean {
   return true;
 }
 
+const PREFERRED_EMAIL_PREFIXES = [
+  "info", "hello", "contact", "appointments", "book", "office", "front",
+];
+
+/** Deduplicate, filter false positives, and rank emails by preferred prefix. */
+function pickBestEmail(emails: string[]): string | null {
+  const valid = emails.filter(isLikelyRealEmail);
+  if (valid.length === 0) return null;
+
+  valid.sort((a, b) => {
+    const aRank = PREFERRED_EMAIL_PREFIXES.indexOf(a.split("@")[0]);
+    const bRank = PREFERRED_EMAIL_PREFIXES.indexOf(b.split("@")[0]);
+    if (aRank >= 0 && bRank >= 0) return aRank - bRank;
+    if (aRank >= 0) return -1;
+    if (bRank >= 0) return 1;
+    return a.localeCompare(b);
+  });
+
+  return valid[0];
+}
+
 async function fetchHtml(
   url: string,
   opts?: { browser?: boolean; timeoutMs?: number }
@@ -573,32 +594,7 @@ export async function findEmailFromWebsite(
   const uniqueEmails = Array.from(
     new Set(allEmails.map((e) => e.toLowerCase()))
   );
-  const validEmails = uniqueEmails.filter(isLikelyRealEmail);
-
-  if (validEmails.length === 0) return null;
-
-  const preferredPrefixes = [
-    "info",
-    "hello",
-    "contact",
-    "appointments",
-    "book",
-    "office",
-    "front",
-  ];
-
-  const ranked = validEmails.sort((a, b) => {
-    const aPrefix = a.split("@")[0];
-    const bPrefix = b.split("@")[0];
-    const aRank = preferredPrefixes.indexOf(aPrefix);
-    const bRank = preferredPrefixes.indexOf(bPrefix);
-    if (aRank >= 0 && bRank >= 0) return aRank - bRank;
-    if (aRank >= 0) return -1;
-    if (bRank >= 0) return 1;
-    return a.localeCompare(b);
-  });
-
-  return ranked[0];
+  return pickBestEmail(uniqueEmails);
 }
 
 // --- Advanced Email Discovery ---
@@ -665,27 +661,7 @@ async function searchDuckDuckGoForEmail(
 
   const matches = html.match(EMAIL_REGEX) || [];
   const uniqueEmails = Array.from(new Set(matches.map((e) => e.toLowerCase())));
-  const validEmails = uniqueEmails.filter(isLikelyRealEmail);
-
-  if (validEmails.length === 0) return null;
-
-  // Prefer business-like prefixes
-  const preferredPrefixes = [
-    "info", "hello", "contact", "appointments", "book", "office", "front",
-  ];
-
-  const ranked = validEmails.sort((a, b) => {
-    const aPrefix = a.split("@")[0];
-    const bPrefix = b.split("@")[0];
-    const aRank = preferredPrefixes.indexOf(aPrefix);
-    const bRank = preferredPrefixes.indexOf(bPrefix);
-    if (aRank >= 0 && bRank >= 0) return aRank - bRank;
-    if (aRank >= 0) return -1;
-    if (bRank >= 0) return 1;
-    return a.localeCompare(b);
-  });
-
-  return ranked[0];
+  return pickBestEmail(uniqueEmails);
 }
 
 /**
@@ -733,31 +709,12 @@ async function searchYellowPagesForEmail(
   }
 
   const uniqueEmails = Array.from(new Set(allEmails.map((e) => e.toLowerCase())));
-  const validEmails = uniqueEmails.filter(isLikelyRealEmail);
-
-  if (validEmails.length === 0) return null;
-
-  const preferredPrefixes = [
-    "info", "hello", "contact", "appointments", "book", "office", "front",
-  ];
-
-  const ranked = validEmails.sort((a, b) => {
-    const aPrefix = a.split("@")[0];
-    const bPrefix = b.split("@")[0];
-    const aRank = preferredPrefixes.indexOf(aPrefix);
-    const bRank = preferredPrefixes.indexOf(bPrefix);
-    if (aRank >= 0 && bRank >= 0) return aRank - bRank;
-    if (aRank >= 0) return -1;
-    if (bRank >= 0) return 1;
-    return a.localeCompare(b);
-  });
-
-  return ranked[0];
+  return pickBestEmail(uniqueEmails);
 }
 
 /**
  * Source 4: Pattern guessing — try common email prefixes at the business domain
- * and validate each with MX lookup. Skips aggregator domains.
+ * and validate with a single MX lookup (MX is domain-level, not per-mailbox).
  */
 export async function guessEmailByPattern(
   businessUrl: string,
@@ -773,15 +730,11 @@ export async function guessEmailByPattern(
   const domain = extractDomain(urlWithProtocol);
   if (!domain) return null;
 
-  const prefixes = ["info", "hello", "contact", "office", "frontdesk"];
+  // MX is domain-level — one check covers all prefixes
+  const hasMx = await emailDiscoveryLimiter.run(() => validateEmail(`check@${domain}`));
+  if (!hasMx) return null;
 
-  for (const prefix of prefixes) {
-    const candidate = `${prefix}@${domain}`;
-    const valid = await emailDiscoveryLimiter.run(() => validateEmail(candidate));
-    if (valid) return candidate;
-  }
-
-  return null;
+  return `info@${domain}`;
 }
 
 /**
@@ -884,6 +837,19 @@ export function isDisposableEmail(email: string): boolean {
   return DISPOSABLE_DOMAIN_SET.has(domain);
 }
 
+/** Resolve MX records with a timeout. Throws on timeout or DNS failure. */
+async function resolveMxWithTimeout(
+  domain: string,
+  timeoutMs = 3_000,
+): Promise<{ exchange: string; priority: number }[]> {
+  return Promise.race([
+    dns.resolveMx(domain),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("DNS timeout")), timeoutMs)
+    ),
+  ]);
+}
+
 /**
  * Validate an email address by checking if the domain has MX records.
  * Includes a 3-second timeout so the call doesn't hang on unresponsive DNS.
@@ -893,12 +859,7 @@ export async function validateEmail(email: string): Promise<boolean> {
   if (!domain) return false;
 
   try {
-    const mxRecords = await Promise.race([
-      dns.resolveMx(domain),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("DNS timeout")), 3_000)
-      ),
-    ]);
+    const mxRecords = await resolveMxWithTimeout(domain);
     return mxRecords.length > 0;
   } catch {
     return false;
@@ -927,12 +888,7 @@ export async function verifyEmailSMTP(
 
   let mxRecords: { exchange: string; priority: number }[];
   try {
-    mxRecords = await Promise.race([
-      dns.resolveMx(domain),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("DNS timeout")), 3_000)
-      ),
-    ]);
+    mxRecords = await resolveMxWithTimeout(domain);
     if (mxRecords.length === 0) {
       return { valid: false, reason: "mailbox not found" };
     }
