@@ -44,13 +44,17 @@ export async function GET(request: Request) {
     const sendIds = result.rows.map((r: { send_id: string }) => r.send_id);
     let bouncedIds = new Set<string>();
     if (sendIds.length > 0) {
-      const bounceResult = await query(
-        `SELECT DISTINCT email_send_id FROM email_events
-         WHERE email_send_id = ANY($1::text[])
-           AND event_type IN ('email.bounced', 'email.complained')`,
-        [sendIds]
-      );
-      bouncedIds = new Set(bounceResult.rows.map((r: { email_send_id: string }) => r.email_send_id));
+      try {
+        const bounceResult = await query(
+          `SELECT DISTINCT email_send_id FROM email_events
+           WHERE email_send_id = ANY($1::text[])
+             AND event_type IN ('email.bounced', 'email.complained')`,
+          [sendIds]
+        );
+        bouncedIds = new Set(bounceResult.rows.map((r: { email_send_id: string }) => r.email_send_id));
+      } catch {
+        // email_events table may not exist yet — no bounce data available
+      }
     }
 
     const stats: Record<string, {
