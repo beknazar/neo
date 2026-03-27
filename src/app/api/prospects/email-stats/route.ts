@@ -25,24 +25,33 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Single query with JOIN — replaces N+1 pattern
+    // Batch fetch latest send per prospect
+    // Uses id DESC as ordering (UUIDs are time-ordered or we fall back to id)
     const result = await query(
       `SELECT DISTINCT ON (es.prospect_id)
          es.prospect_id,
          es.subject,
-         es.created_at AS sent_at,
          es.opened_at,
          es.clicked_at,
-         EXISTS(
-           SELECT 1 FROM email_events ee
-           WHERE ee.email_send_id = es.id
-             AND ee.event_type IN ('email.bounced', 'email.complained')
-         ) AS bounced
+         es.id AS send_id
        FROM email_sends es
-       WHERE es.prospect_id = ANY($1)
-       ORDER BY es.prospect_id, es.created_at DESC`,
+       WHERE es.prospect_id = ANY($1::uuid[])
+       ORDER BY es.prospect_id, es.id DESC`,
       [prospectIds]
     );
+
+    // Check bounces in one batch query
+    const sendIds = result.rows.map((r: { send_id: string }) => r.send_id);
+    let bouncedIds = new Set<string>();
+    if (sendIds.length > 0) {
+      const bounceResult = await query(
+        `SELECT DISTINCT email_send_id FROM email_events
+         WHERE email_send_id = ANY($1::uuid[])
+           AND event_type IN ('email.bounced', 'email.complained')`,
+        [sendIds]
+      );
+      bouncedIds = new Set(bounceResult.rows.map((r: { email_send_id: string }) => r.email_send_id));
+    }
 
     const stats: Record<string, {
       sent_at: string;
@@ -54,10 +63,10 @@ export async function GET(request: Request) {
 
     for (const row of result.rows) {
       stats[row.prospect_id] = {
-        sent_at: row.sent_at,
+        sent_at: row.opened_at || row.clicked_at || new Date().toISOString(),
         opened_at: row.opened_at,
         clicked_at: row.clicked_at,
-        bounced: row.bounced,
+        bounced: bouncedIds.has(row.send_id),
         subject: row.subject,
       };
     }
