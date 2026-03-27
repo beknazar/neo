@@ -149,7 +149,7 @@ export default async function ReportPage({ params }: PageProps) {
           {/* Summary */}
           <div className="border-l-2 border-primary/40 pl-5">
             <p className="text-[0.9375rem] leading-relaxed text-muted-foreground">
-              {report.summary}
+              {decodeHtmlEntities(report.summary)}
             </p>
           </div>
 

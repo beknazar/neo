@@ -1,6 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+function decodeHtml(str: string): string {
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&#x27;/g, "'");
+}
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -608,7 +618,7 @@ export default function ProspectsPage() {
                     {/* Primary row: name + badge */}
                     <div className="flex items-center gap-2">
                       <h3 className="truncate text-sm font-medium">
-                        {p.business_name}
+                        {decodeHtml(p.business_name)}
                       </h3>
                       <Badge
                         className={`shrink-0 border-0 ${
@@ -776,7 +786,7 @@ export default function ProspectsPage() {
           <div className="mx-4 w-full max-w-lg rounded-xl border border-border bg-card p-6 shadow-2xl">
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-sm font-semibold">
-                Email to {emailModal.businessName}
+                Email to {decodeHtml(emailModal.businessName)}
               </h3>
               <button
                 onClick={() => setEmailModal(null)}
