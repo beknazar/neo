@@ -846,12 +846,17 @@ async function resolveMxWithTimeout(
   domain: string,
   timeoutMs = 3_000,
 ): Promise<{ exchange: string; priority: number }[]> {
-  return Promise.race([
-    dns.resolveMx(domain),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("DNS timeout")), timeoutMs)
-    ),
-  ]);
+  let timer: ReturnType<typeof setTimeout>;
+  try {
+    return await Promise.race([
+      dns.resolveMx(domain),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("DNS timeout")), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer!);
+  }
 }
 
 /**

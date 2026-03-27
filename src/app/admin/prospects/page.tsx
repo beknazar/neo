@@ -1,16 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-
-function decodeHtml(str: string): string {
-  return str
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/&#x27;/g, "'");
-}
+import { useEffect, useMemo, useState } from "react";
+import { decodeHtmlEntities as decodeHtml } from "@/lib/text";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";

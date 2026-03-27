@@ -22,24 +22,9 @@ import { NeoLogo } from "@/components/neo-logo";
 
 type ScanStatus = "idle" | "extracting" | "confirming" | "scanning" | "error";
 
-const CURRENT_YEAR = new Date().getFullYear();
+import { inferVerticalFromUrl } from "@/lib/queries";
 
-/** Lightweight client-side vertical inference from URL + business name. */
-function inferVertical(url: string, name: string): string | undefined {
-  const text = `${url} ${name}`.toLowerCase();
-  const rules: [string, string[]][] = [
-    ["personal injury lawyer", ["law", "attorney", "legal"]],
-    ["dentist", ["dental", "dentist", "orthodont"]],
-    ["real estate agent", ["real estate", "realty", "realtor"]],
-    ["med spa", ["med spa", "medspa", "aesthetic", "botox"]],
-    ["plumber", ["plumb"]],
-    ["plastic surgeon", ["plastic surg", "cosmetic surg"]],
-  ];
-  for (const [vertical, keywords] of rules) {
-    if (keywords.some((kw) => text.includes(kw))) return vertical;
-  }
-  return undefined;
-}
+const CURRENT_YEAR = new Date().getFullYear();
 
 export default function Home() {
   const router = useRouter();
@@ -101,7 +86,7 @@ export default function Home() {
           businessName,
           businessUrl,
           city,
-          vertical: inferVertical(businessUrl, businessName),
+          vertical: inferVerticalFromUrl(`${businessUrl} ${businessName}`) ?? undefined,
         }),
       });
 

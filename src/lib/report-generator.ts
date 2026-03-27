@@ -20,50 +20,69 @@ export interface NeoReport extends ScanReport {
 /*  Vertical-specific configuration                                           */
 /* -------------------------------------------------------------------------- */
 
-type Vertical = "med spa" | "lawyer" | "dentist" | "real estate" | "plumber";
+/** Normalize vertical strings to canonical short keys for lookups. */
+function normalizeVertical(v?: string): string | undefined {
+  if (!v) return undefined;
+  const lower = v.toLowerCase().trim();
+  if (lower.includes("law") || lower.includes("attorney")) return "lawyer";
+  if (lower.includes("dentist") || lower.includes("dental")) return "dentist";
+  if (lower.includes("real estate") || lower.includes("realtor")) return "real estate";
+  if (lower.includes("plumb")) return "plumber";
+  if (lower.includes("plastic surg") || lower.includes("cosmetic surg")) return "plastic surgeon";
+  if (lower.includes("med spa") || lower.includes("medspa") || lower.includes("botox")) return "med spa";
+  return lower;
+}
 
-const SCHEMA_TYPE: Record<Vertical, string> = {
+type VerticalKey = "med spa" | "lawyer" | "dentist" | "real estate" | "plumber" | "plastic surgeon";
+
+const SCHEMA_TYPE: Partial<Record<VerticalKey, string>> = {
   "med spa": "MedicalBusiness",
   lawyer: "LegalService",
   dentist: "Dentist",
   "real estate": "RealEstateAgent",
   plumber: "Plumber",
+  "plastic surgeon": "MedicalBusiness",
 };
 
-const REVIEW_PLATFORMS: Record<Vertical, string> = {
+const REVIEW_PLATFORMS: Partial<Record<VerticalKey, string>> = {
   "med spa": "Google Business Profile, Yelp, and RealSelf",
   lawyer: "Avvo, Google, and Martindale-Hubbell",
   dentist: "Google, Healthgrades, and Zocdoc",
   "real estate": "Zillow, Realtor.com, and Google",
   plumber: "Google Business Profile, Yelp, and Angi",
+  "plastic surgeon": "Google Business Profile, RealSelf, and Healthgrades",
 };
 
-const CITATION_PLATFORMS: Record<Vertical, string> = {
+const CITATION_PLATFORMS: Partial<Record<VerticalKey, string>> = {
   "med spa": "Google Business Profile, Yelp, Healthgrades, RealSelf",
   lawyer: "Google Business Profile, Avvo, Martindale-Hubbell, Justia",
   dentist: "Google Business Profile, Healthgrades, Zocdoc, Yelp",
   "real estate": "Google Business Profile, Zillow, Realtor.com, Yelp",
   plumber: "Google Business Profile, Yelp, Angi, HomeAdvisor",
+  "plastic surgeon": "Google Business Profile, RealSelf, Healthgrades, Yelp",
 };
 
-function getSchemaType(vertical?: Vertical): string {
-  return vertical ? (SCHEMA_TYPE[vertical] ?? "LocalBusiness") : "LocalBusiness";
+function getSchemaType(vertical?: string): string {
+  const key = normalizeVertical(vertical) as VerticalKey | undefined;
+  return key ? (SCHEMA_TYPE[key] ?? "LocalBusiness") : "LocalBusiness";
 }
 
-function getReviewPlatforms(vertical?: Vertical): string {
-  return vertical
-    ? (REVIEW_PLATFORMS[vertical] ?? "Google Business Profile, Yelp, and industry-specific review sites")
+function getReviewPlatforms(vertical?: string): string {
+  const key = normalizeVertical(vertical) as VerticalKey | undefined;
+  return key
+    ? (REVIEW_PLATFORMS[key] ?? "Google Business Profile, Yelp, and industry-specific review sites")
     : "Google Business Profile, Yelp, and industry-specific review sites";
 }
 
-function getCitationPlatforms(vertical?: Vertical): string {
-  return vertical
-    ? (CITATION_PLATFORMS[vertical] ?? "Google Business Profile, Yelp")
+function getCitationPlatforms(vertical?: string): string {
+  const key = normalizeVertical(vertical) as VerticalKey | undefined;
+  return key
+    ? (CITATION_PLATFORMS[key] ?? "Google Business Profile, Yelp")
     : "Google Business Profile, Yelp";
 }
 
-function getVerticalLabel(vertical?: Vertical): string {
-  return vertical ?? "local";
+function getVerticalLabel(vertical?: string): string {
+  return normalizeVertical(vertical) ?? "local";
 }
 
 /**
@@ -72,7 +91,7 @@ function getVerticalLabel(vertical?: Vertical): string {
  */
 export async function generateFixes(
   report: ScanReport,
-  vertical?: Vertical
+  vertical?: string
 ): Promise<NeoReport> {
   const fixes: FixRecommendation[] = [];
   const schemaType = getSchemaType(vertical);
@@ -187,7 +206,7 @@ function generateFAQSuggestions(
   businessName: string,
   city: string,
   gapQueries: string[],
-  vertical?: Vertical
+  vertical?: string
 ): string {
   const verticalLabel = getVerticalLabel(vertical);
 
@@ -232,7 +251,7 @@ function generateFAQSuggestions(
 function generateSummary(
   report: ScanReport,
   fixes: FixRecommendation[],
-  vertical?: Vertical
+  vertical?: string
 ): string {
   const score = report.recommendationScore;
   const gaps = report.gapQueries.length;

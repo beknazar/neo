@@ -13,16 +13,7 @@ import {
 } from "@/lib/email-templates";
 import { FREE_SLOTS, APP_URL, FREE_QUERY_COUNT, FREE_RUNS_PER_QUERY, PROSPECT_STATUS } from "@/lib/constants";
 import { requireAdmin } from "@/lib/admin";
-
-function decodeHtmlEntities(str: string): string {
-  return str
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/&#x27;/g, "'");
-}
+import { decodeHtmlEntities } from "@/lib/text";
 import { randomUUID } from "crypto";
 import { runScanForBusiness } from "@/lib/scanner";
 import { inferVerticalFromUrl } from "@/lib/queries";
@@ -146,17 +137,18 @@ export async function POST(request: Request) {
     // These are post-send DB operations. If they fail, the email was still
     // sent successfully, so we return success to the user and log the error.
     try {
-      await saveEmailSend({
-        prospectId,
-        templateName: "outreach_v1",
-        subject,
-        body: finalBody,
-        status: "sent",
-        resendId: data?.id || null,
-        unsubscribeToken: unsubToken,
-      });
-
-      await updateProspectStatus(prospectId, PROSPECT_STATUS.EMAILED);
+      await Promise.all([
+        saveEmailSend({
+          prospectId,
+          templateName: "outreach_v1",
+          subject,
+          body: finalBody,
+          status: "sent",
+          resendId: data?.id || null,
+          unsubscribeToken: unsubToken,
+        }),
+        updateProspectStatus(prospectId, PROSPECT_STATUS.EMAILED),
+      ]);
     } catch (dbError) {
       console.error(
         "Email sent successfully but failed to save to database:",
