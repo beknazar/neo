@@ -42,8 +42,7 @@ ${data.reportUrl}
 We're offering free accounts to the first 30 businesses. ${data.slotsLeft} spots remaining.
 
 Best,
-Bek
-Neo — AI Search Intelligence`;
+Bek`;
 
   return { subject, body };
 }
@@ -73,5 +72,5 @@ export function addUnsubscribeFooter(
 
 ---
 To stop receiving emails from us: ${unsubUrl}
-Neo | San Francisco, CA`;
+Bek Abdik | San Francisco, CA`;
 }

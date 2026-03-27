@@ -33,6 +33,7 @@ import {
   X,
   Eye,
   Pencil,
+  Activity,
 } from "lucide-react";
 
 const US_CITIES = [
@@ -62,6 +63,25 @@ interface Prospect {
   scan_report_id: string | null;
   recommendation_score?: number | null;
   created_at: string;
+}
+
+interface EmailStats {
+  sent_at: string;
+  opened_at: string | null;
+  clicked_at: string | null;
+  bounced: boolean;
+  subject: string;
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
 }
 
 type DiscoverStatus = "idle" | "discovering" | "done" | "error";
@@ -144,12 +164,45 @@ export default function ProspectsPage() {
   const [emailValidations, setEmailValidations] = useState<
     Record<string, { valid: boolean; reason?: string; validating?: boolean }>
   >({});
+  const [scanningIds, setScanningIds] = useState<Set<string>>(new Set());
+  const [scanAllProgress, setScanAllProgress] = useState<{
+    running: boolean;
+    current: number;
+    total: number;
+  } | null>(null);
+  const [emailStats, setEmailStats] = useState<Record<string, EmailStats>>({});
+
+  async function fetchEmailStats(prospectId: string) {
+    try {
+      const res = await fetch(
+        `/api/prospects/email-stats?prospectId=${encodeURIComponent(prospectId)}`
+      );
+      if (res.ok) {
+        const data: EmailStats = await res.json();
+        setEmailStats((prev) => ({ ...prev, [prospectId]: data }));
+      }
+    } catch {
+      // silently fail — stats are non-critical
+    }
+  }
 
   useEffect(() => {
     if (session?.user?.id) {
       fetchProspects();
     }
   }, [session?.user?.id]);
+
+  // Fetch email stats for all emailed prospects once prospects are loaded
+  useEffect(() => {
+    const emailed = prospects.filter(
+      (p) => p.status === PROSPECT_STATUS.EMAILED
+    );
+    for (const p of emailed) {
+      if (!emailStats[p.id]) {
+        fetchEmailStats(p.id);
+      }
+    }
+  }, [prospects]);
 
   async function fetchProspects() {
     try {
@@ -161,6 +214,96 @@ export default function ProspectsPage() {
     } catch {
       // silently fail
     }
+  }
+
+  async function handleScan(prospectId: string) {
+    setScanningIds((prev) => new Set(prev).add(prospectId));
+
+    try {
+      const res = await fetch("/api/prospects/send-email", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prospectId }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Scan failed");
+      }
+
+      // Refresh prospects to get the updated scan_report_id
+      await fetchProspects();
+      const prospect = prospects.find((p) => p.id === prospectId);
+      toast.success(
+        `Scan complete for ${prospect ? decodeHtml(prospect.business_name) : "prospect"}`
+      );
+      posthog?.capture("prospect_scanned", { prospect_id: prospectId });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "Scan failed";
+      toast.error(reason);
+    } finally {
+      setScanningIds((prev) => {
+        const next = new Set(prev);
+        next.delete(prospectId);
+        return next;
+      });
+    }
+  }
+
+  async function handleScanAll() {
+    const unscanned = prospects.filter(
+      (p) =>
+        p.email &&
+        !p.scan_report_id &&
+        p.status !== PROSPECT_STATUS.EMAILED &&
+        p.status !== PROSPECT_STATUS.SIGNED_UP
+    );
+
+    if (unscanned.length === 0) {
+      toast.info("No un-scanned prospects with emails to scan");
+      return;
+    }
+
+    setScanAllProgress({ running: true, current: 0, total: unscanned.length });
+
+    for (let i = 0; i < unscanned.length; i++) {
+      setScanAllProgress({ running: true, current: i + 1, total: unscanned.length });
+      const p = unscanned[i];
+      setScanningIds((prev) => new Set(prev).add(p.id));
+
+      try {
+        const res = await fetch("/api/prospects/send-email", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prospectId: p.id }),
+        });
+
+        if (!res.ok) {
+          const data = await res.json();
+          toast.error(
+            `Scan failed for ${decodeHtml(p.business_name)}: ${data.error || "Unknown error"}`
+          );
+        }
+      } catch (err) {
+        toast.error(
+          `Scan failed for ${decodeHtml(p.business_name)}: ${
+            err instanceof Error ? err.message : "Unknown error"
+          }`
+        );
+      } finally {
+        setScanningIds((prev) => {
+          const next = new Set(prev);
+          next.delete(p.id);
+          return next;
+        });
+      }
+    }
+
+    // Refresh all prospects after scan-all completes
+    await fetchProspects();
+    setScanAllProgress(null);
+    toast.success(`Scanned ${unscanned.length} prospects`);
+    posthog?.capture("prospects_scan_all", { count: unscanned.length });
   }
 
   async function handleDiscover() {
@@ -560,20 +703,48 @@ export default function ProspectsPage() {
               </span>
             </div>
             {prospects.length > 0 && (
-              <div className="flex items-center gap-2">
-                {Object.entries(statusCounts).map(([status, count]) => (
-                  <span
-                    key={status}
-                    className="inline-flex items-center gap-1 text-xs text-muted-foreground"
-                  >
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  {Object.entries(statusCounts).map(([status, count]) => (
                     <span
-                      className={`inline-block size-1.5 rounded-full ${
-                        STATUS_CONFIG[status]?.dot || STATUS_CONFIG[PROSPECT_STATUS.DISCOVERED].dot
-                      }`}
-                    />
-                    {count} {STATUS_CONFIG[status]?.label || status}
-                  </span>
-                ))}
+                      key={status}
+                      className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+                    >
+                      <span
+                        className={`inline-block size-1.5 rounded-full ${
+                          STATUS_CONFIG[status]?.dot || STATUS_CONFIG[PROSPECT_STATUS.DISCOVERED].dot
+                        }`}
+                      />
+                      {count} {STATUS_CONFIG[status]?.label || status}
+                    </span>
+                  ))}
+                </div>
+                {prospects.some(
+                  (p) =>
+                    p.email &&
+                    !p.scan_report_id &&
+                    p.status !== PROSPECT_STATUS.EMAILED &&
+                    p.status !== PROSPECT_STATUS.SIGNED_UP
+                ) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={scanAllProgress?.running}
+                    onClick={handleScanAll}
+                  >
+                    {scanAllProgress?.running ? (
+                      <>
+                        <Loader2 className="size-3 animate-spin" />
+                        Scanning {scanAllProgress.current}/{scanAllProgress.total}...
+                      </>
+                    ) : (
+                      <>
+                        <Activity className="size-3" />
+                        Scan All
+                      </>
+                    )}
+                  </Button>
+                )}
               </div>
             )}
           </div>
@@ -728,6 +899,31 @@ export default function ProspectsPage() {
 
                   {/* Actions */}
                   <div className="flex shrink-0 items-center gap-2">
+                    {/* Has email, no report: show Scan button */}
+                    {p.email &&
+                      !p.scan_report_id &&
+                      p.status !== PROSPECT_STATUS.EMAILED &&
+                      p.status !== PROSPECT_STATUS.SIGNED_UP && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={scanningIds.has(p.id)}
+                          onClick={() => handleScan(p.id)}
+                        >
+                          {scanningIds.has(p.id) ? (
+                            <>
+                              <Loader2 className="size-3 animate-spin" />
+                              Scanning...
+                            </>
+                          ) : (
+                            <>
+                              <Activity className="size-3" />
+                              Scan
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    {/* Has report: show View Report */}
                     {p.scan_report_id && (
                       <Link href={`/report/${p.scan_report_id}`}>
                         <Button variant="ghost" size="sm">
@@ -735,7 +931,9 @@ export default function ProspectsPage() {
                         </Button>
                       </Link>
                     )}
+                    {/* Has email + report + not yet emailed: show Preview Email */}
                     {p.email &&
+                      p.scan_report_id &&
                       p.status !== PROSPECT_STATUS.EMAILED &&
                       p.status !== PROSPECT_STATUS.SIGNED_UP && (
                         <Button
@@ -757,11 +955,53 @@ export default function ProspectsPage() {
                           )}
                         </Button>
                       )}
+                    {/* Emailed: show stats */}
                     {p.status === PROSPECT_STATUS.EMAILED && (
-                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                        <CheckCircle2 className="size-3" />
-                        Sent
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {emailStats[p.id] ? (
+                          <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                            <span className="inline-flex items-center gap-1">
+                              <Send className="size-3" />
+                              Sent {timeAgo(emailStats[p.id].sent_at)}
+                            </span>
+                            <span className="inline-flex items-center gap-1">
+                              <span
+                                className={`inline-block size-1.5 rounded-full ${
+                                  emailStats[p.id].opened_at
+                                    ? "bg-primary"
+                                    : "bg-muted-foreground/30"
+                                }`}
+                              />
+                              <span className={emailStats[p.id].opened_at ? "text-primary" : ""}>
+                                Opened
+                              </span>
+                            </span>
+                            <span className="inline-flex items-center gap-1">
+                              <span
+                                className={`inline-block size-1.5 rounded-full ${
+                                  emailStats[p.id].clicked_at
+                                    ? "bg-primary"
+                                    : "bg-muted-foreground/30"
+                                }`}
+                              />
+                              <span className={emailStats[p.id].clicked_at ? "text-primary" : ""}>
+                                Clicked
+                              </span>
+                            </span>
+                            {emailStats[p.id].bounced && (
+                              <span className="inline-flex items-center gap-1 text-destructive">
+                                <span className="inline-block size-1.5 rounded-full bg-destructive" />
+                                Bounced
+                              </span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                            <CheckCircle2 className="size-3" />
+                            Sent
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
