@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import {
   getActiveCampaigns,
+  getDailySentCount,
   getNextProspectsForCampaign,
   saveEmailSend,
   incrementCampaignSent,
@@ -29,13 +30,17 @@ export const maxDuration = 60;
  * Runs every 15 minutes via Vercel cron.
  */
 export async function GET(request: Request) {
-  // Verify cron secret
+  // Verify cron secret (fail closed — reject if not configured)
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const authHeader = request.headers.get("authorization");
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (!cronSecret) {
+    return NextResponse.json(
+      { error: "CRON_SECRET not configured" },
+      { status: 500 }
+    );
+  }
+  const authHeader = request.headers.get("authorization");
+  if (authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
@@ -59,7 +64,15 @@ export async function GET(request: Request) {
     for (const campaign of campaigns) {
       const age = campaignAge(campaign);
       const dailyLimit = WARMUP_SCHEDULE[age] ?? WARMUP_DEFAULT_LIMIT;
-      const perRunLimit = Math.min(EMAILS_PER_CRON_RUN, dailyLimit);
+      const dailySent = await getDailySentCount(campaign.id);
+      const remainingToday = dailyLimit - dailySent;
+
+      if (remainingToday <= 0) {
+        // Daily cap reached for this campaign — skip until tomorrow
+        continue;
+      }
+
+      const perRunLimit = Math.min(EMAILS_PER_CRON_RUN, remainingToday);
 
       // Get prospects not yet emailed for this campaign
       const prospects = await getNextProspectsForCampaign(

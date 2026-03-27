@@ -341,6 +341,14 @@ export async function incrementCampaignSent(id: string) {
   await query("UPDATE campaigns SET sent_count = sent_count + 1, updated_at = NOW() WHERE id = $1", [id]);
 }
 
+export async function getDailySentCount(campaignId: string): Promise<number> {
+  const result = await query(
+    `SELECT COUNT(*) FROM email_sends WHERE campaign_id = $1 AND created_at >= CURRENT_DATE`,
+    [campaignId]
+  );
+  return parseInt(result.rows[0].count, 10);
+}
+
 export async function getActiveCampaigns() {
   const result = await query(
     "SELECT * FROM campaigns WHERE status = 'active' AND sent_count < target_count ORDER BY created_at ASC"

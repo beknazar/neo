@@ -5,6 +5,7 @@
  */
 
 import { promises as dns } from "dns";
+import net from "net";
 import { USER_AGENT, BROWSER_USER_AGENT } from "@/lib/constants";
 
 // --- Types ---
@@ -436,6 +437,35 @@ function deduplicateBusinesses(
   return Array.from(seen.values());
 }
 
+// --- Concurrency Limiter ---
+
+/**
+ * Simple concurrency limiter for HTTP requests across all email discovery sources.
+ * Ensures at most `maxConcurrent` tasks run at once.
+ */
+class ConcurrencyLimiter {
+  private running = 0;
+  private queue: (() => void)[] = [];
+
+  constructor(private maxConcurrent: number) {}
+
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    while (this.running >= this.maxConcurrent) {
+      await new Promise<void>((resolve) => this.queue.push(resolve));
+    }
+    this.running++;
+    try {
+      return await fn();
+    } finally {
+      this.running--;
+      const next = this.queue.shift();
+      if (next) next();
+    }
+  }
+}
+
+const emailDiscoveryLimiter = new ConcurrencyLimiter(5);
+
 // --- Email Finding ---
 
 const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
@@ -571,19 +601,460 @@ export async function findEmailFromWebsite(
   return ranked[0];
 }
 
+// --- Advanced Email Discovery ---
+
+/** Domains that are aggregators, not real business sites — skip for pattern guessing */
+const AGGREGATOR_DOMAINS = new Set([
+  "yelp.com", "yellowpages.com", "facebook.com", "instagram.com",
+  "twitter.com", "x.com", "linkedin.com", "tripadvisor.com",
+  "bbb.org", "angi.com", "thumbtack.com", "groupon.com",
+  "google.com", "youtube.com", "wikipedia.org", "reddit.com",
+  "pinterest.com", "nextdoor.com", "mapquest.com", "foursquare.com",
+  "manta.com", "superpages.com", "citysearch.com", "tiktok.com",
+  "wix.com", "squarespace.com", "weebly.com", "godaddy.com",
+  "wordpress.com", "blogspot.com",
+]);
+
+/**
+ * Check if a URL belongs to an aggregator / non-business domain.
+ * Used by pattern guessing to skip domains that won't have a catch-all mailbox.
+ */
+function isAggregatorDomain(url: string): boolean {
+  try {
+    let hostname = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+    if (AGGREGATOR_DOMAINS.has(hostname)) return true;
+    let dot = hostname.indexOf(".");
+    while (dot !== -1) {
+      hostname = hostname.slice(dot + 1);
+      if (AGGREGATOR_DOMAINS.has(hostname)) return true;
+      dot = hostname.indexOf(".");
+    }
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Extract the registrable domain from a URL (e.g. "https://www.sfmedspa.com/about" -> "sfmedspa.com").
+ */
+function extractDomain(url: string): string | null {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+    return hostname || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Source 2: Search DuckDuckGo for emails associated with a business.
+ * Searches `"{businessName}" email {city}` and extracts email addresses from result HTML.
+ */
+async function searchDuckDuckGoForEmail(
+  businessName: string,
+  city: string,
+): Promise<string | null> {
+  const query = encodeURIComponent(`"${businessName}" email ${city}`);
+  const url = `https://html.duckduckgo.com/html/?q=${query}`;
+
+  const html = await emailDiscoveryLimiter.run(() =>
+    fetchHtml(url, { browser: true, timeoutMs: 10_000 })
+  );
+  if (!html) return null;
+
+  const matches = html.match(EMAIL_REGEX) || [];
+  const uniqueEmails = Array.from(new Set(matches.map((e) => e.toLowerCase())));
+  const validEmails = uniqueEmails.filter(isLikelyRealEmail);
+
+  if (validEmails.length === 0) return null;
+
+  // Prefer business-like prefixes
+  const preferredPrefixes = [
+    "info", "hello", "contact", "appointments", "book", "office", "front",
+  ];
+
+  const ranked = validEmails.sort((a, b) => {
+    const aPrefix = a.split("@")[0];
+    const bPrefix = b.split("@")[0];
+    const aRank = preferredPrefixes.indexOf(aPrefix);
+    const bRank = preferredPrefixes.indexOf(bPrefix);
+    if (aRank >= 0 && bRank >= 0) return aRank - bRank;
+    if (aRank >= 0) return -1;
+    if (bRank >= 0) return 1;
+    return a.localeCompare(b);
+  });
+
+  return ranked[0];
+}
+
+/**
+ * Source 3: Scrape YellowPages search results and individual listing pages for emails.
+ */
+async function searchYellowPagesForEmail(
+  businessName: string,
+  city: string,
+): Promise<string | null> {
+  const searchUrl = `https://www.yellowpages.com/search?search_terms=${encodeURIComponent(businessName)}&geo_location_terms=${encodeURIComponent(city)}`;
+
+  const html = await emailDiscoveryLimiter.run(() =>
+    fetchHtml(searchUrl, { browser: true, timeoutMs: 10_000 })
+  );
+  if (!html) return null;
+
+  const allEmails: string[] = [];
+
+  // Extract emails from the search results page itself
+  const pageEmails = html.match(EMAIL_REGEX) || [];
+  allEmails.push(...pageEmails);
+
+  // Find individual listing page links and scrape those too
+  const listingPattern = /href="(\/[^"]*\?lid=[^"]+)"/g;
+  const listingUrls: string[] = [];
+  let listingMatch;
+  while ((listingMatch = listingPattern.exec(html)) !== null) {
+    if (listingUrls.length >= 3) break; // limit to first 3 listings
+    listingUrls.push(`https://www.yellowpages.com${listingMatch[1]}`);
+  }
+
+  // Scrape listing pages in parallel (through the limiter)
+  const listingPages = await Promise.all(
+    listingUrls.map((listingUrl) =>
+      emailDiscoveryLimiter.run(() =>
+        fetchHtml(listingUrl, { browser: true, timeoutMs: 10_000 })
+      )
+    )
+  );
+
+  for (const listingHtml of listingPages) {
+    if (!listingHtml) continue;
+    const matches = listingHtml.match(EMAIL_REGEX) || [];
+    allEmails.push(...matches);
+  }
+
+  const uniqueEmails = Array.from(new Set(allEmails.map((e) => e.toLowerCase())));
+  const validEmails = uniqueEmails.filter(isLikelyRealEmail);
+
+  if (validEmails.length === 0) return null;
+
+  const preferredPrefixes = [
+    "info", "hello", "contact", "appointments", "book", "office", "front",
+  ];
+
+  const ranked = validEmails.sort((a, b) => {
+    const aPrefix = a.split("@")[0];
+    const bPrefix = b.split("@")[0];
+    const aRank = preferredPrefixes.indexOf(aPrefix);
+    const bRank = preferredPrefixes.indexOf(bPrefix);
+    if (aRank >= 0 && bRank >= 0) return aRank - bRank;
+    if (aRank >= 0) return -1;
+    if (bRank >= 0) return 1;
+    return a.localeCompare(b);
+  });
+
+  return ranked[0];
+}
+
+/**
+ * Source 4: Pattern guessing — try common email prefixes at the business domain
+ * and validate each with MX lookup. Skips aggregator domains.
+ */
+export async function guessEmailByPattern(
+  businessUrl: string,
+): Promise<string | null> {
+  if (!businessUrl) return null;
+
+  const urlWithProtocol = businessUrl.startsWith("http")
+    ? businessUrl
+    : `https://${businessUrl}`;
+
+  if (isAggregatorDomain(urlWithProtocol)) return null;
+
+  const domain = extractDomain(urlWithProtocol);
+  if (!domain) return null;
+
+  const prefixes = ["info", "hello", "contact", "office", "frontdesk"];
+
+  for (const prefix of prefixes) {
+    const candidate = `${prefix}@${domain}`;
+    const valid = await emailDiscoveryLimiter.run(() => validateEmail(candidate));
+    if (valid) return candidate;
+  }
+
+  return null;
+}
+
+/**
+ * Advanced email discovery: tries multiple sources in fallback order.
+ *
+ * 1. Website scrape (existing findEmailFromWebsite)
+ * 2. DuckDuckGo email search + YellowPages scrape (in parallel, 10s timeout)
+ * 3. Pattern guessing with MX validation
+ *
+ * Uses a concurrency limiter (max 5 concurrent HTTP requests).
+ */
+export async function findEmailAdvanced(
+  businessName: string,
+  businessUrl: string,
+  city: string,
+): Promise<string | null> {
+  // Source 1: Existing website scrape
+  if (businessUrl) {
+    const websiteEmail = await findEmailFromWebsite(businessUrl);
+    if (websiteEmail) return websiteEmail;
+  }
+
+  // Sources 2 + 3: DuckDuckGo + YellowPages in parallel with 10s timeout
+  const timeoutPromise = new Promise<null>((resolve) =>
+    setTimeout(() => resolve(null), 10_000)
+  );
+
+  // Add 1-second delay before DDG to avoid rate limiting
+  const ddgWithDelay = async (): Promise<string | null> => {
+    await new Promise((r) => setTimeout(r, 1_000));
+    return searchDuckDuckGoForEmail(businessName, city);
+  };
+
+  const [ddgResult, ypResult] = await Promise.all([
+    Promise.race([ddgWithDelay(), timeoutPromise]),
+    Promise.race([searchYellowPagesForEmail(businessName, city), timeoutPromise]),
+  ]);
+
+  if (ddgResult) return ddgResult;
+  if (ypResult) return ypResult;
+
+  // Source 4: Pattern guessing with MX validation
+  if (businessUrl) {
+    const guessedEmail = await guessEmailByPattern(businessUrl);
+    if (guessedEmail) return guessedEmail;
+  }
+
+  return null;
+}
+
 // --- Email Validation ---
+
+// Disposable / temporary email domain blocklist
+export const DISPOSABLE_EMAIL_DOMAINS = [
+  "mailinator.com",
+  "guerrillamail.com",
+  "tempmail.com",
+  "throwaway.email",
+  "yopmail.com",
+  "10minutemail.com",
+  "trashmail.com",
+  "fakeinbox.com",
+  "sharklasers.com",
+  "guerrillamail.info",
+  "grr.la",
+  "guerrillamail.net",
+  "guerrillamail.de",
+  "dispostable.com",
+  "mailnesia.com",
+  "maildrop.cc",
+  "temp-mail.org",
+  "tempail.com",
+  "mohmal.com",
+  "getnada.com",
+  "emailondeck.com",
+  "mintemail.com",
+  "harakirimail.com",
+  "jetable.org",
+  "spamgourmet.com",
+  "mytemp.email",
+  "thronesmail.com",
+  "bugmenot.com",
+  "mailcatch.com",
+  "inboxalias.com",
+  "crazymailing.com",
+  "disposableemailaddresses.emailmiser.com",
+  "filzmail.com",
+  "tempr.email",
+  "discard.email",
+] as const;
+
+const DISPOSABLE_DOMAIN_SET = new Set<string>(DISPOSABLE_EMAIL_DOMAINS);
+
+/**
+ * Check whether an email belongs to a known disposable / temporary email domain.
+ */
+export function isDisposableEmail(email: string): boolean {
+  const domain = email.split("@")[1]?.toLowerCase();
+  if (!domain) return false;
+  return DISPOSABLE_DOMAIN_SET.has(domain);
+}
 
 /**
  * Validate an email address by checking if the domain has MX records.
+ * Includes a 3-second timeout so the call doesn't hang on unresponsive DNS.
  */
 export async function validateEmail(email: string): Promise<boolean> {
   const domain = email.split("@")[1];
   if (!domain) return false;
 
   try {
-    const mxRecords = await dns.resolveMx(domain);
+    const mxRecords = await Promise.race([
+      dns.resolveMx(domain),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("DNS timeout")), 3_000)
+      ),
+    ]);
     return mxRecords.length > 0;
   } catch {
     return false;
   }
+}
+
+// --- SMTP RCPT TO Verification ---
+
+export interface SmtpVerifyResult {
+  valid: boolean;
+  reason?: string;
+}
+
+/**
+ * Verify an email address exists by connecting to the domain's MX server
+ * and issuing SMTP RCPT TO. Returns:
+ *   {valid: true}                          – mailbox confirmed (250)
+ *   {valid: false, reason: "mailbox not found"} – mailbox rejected (550)
+ *   {valid: true, reason: "could not verify"}   – timeout / network / other error
+ */
+export async function verifyEmailSMTP(
+  email: string,
+): Promise<SmtpVerifyResult> {
+  const domain = email.split("@")[1];
+  if (!domain) return { valid: false, reason: "mailbox not found" };
+
+  let mxRecords: { exchange: string; priority: number }[];
+  try {
+    mxRecords = await Promise.race([
+      dns.resolveMx(domain),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("DNS timeout")), 3_000)
+      ),
+    ]);
+    if (mxRecords.length === 0) {
+      return { valid: false, reason: "mailbox not found" };
+    }
+  } catch {
+    return { valid: true, reason: "could not verify" };
+  }
+
+  // Sort by priority (lower = preferred) and use the first one
+  mxRecords.sort((a, b) => a.priority - b.priority);
+  const mxHost = mxRecords[0].exchange;
+
+  return new Promise<SmtpVerifyResult>((resolve) => {
+    const timeout = setTimeout(() => {
+      socket.destroy();
+      resolve({ valid: true, reason: "could not verify" });
+    }, 5_000);
+
+    let step: "greeting" | "ehlo" | "mailfrom" | "rcptto" | "done" = "greeting";
+    let buffer = "";
+
+    const socket = net.createConnection(25, mxHost);
+
+    function finish(result: SmtpVerifyResult) {
+      clearTimeout(timeout);
+      socket.destroy();
+      resolve(result);
+    }
+
+    socket.on("data", (data: Buffer) => {
+      buffer += data.toString();
+
+      // SMTP responses end with \r\n — process complete lines
+      while (buffer.includes("\r\n")) {
+        const lineEnd = buffer.indexOf("\r\n");
+        const line = buffer.slice(0, lineEnd);
+        buffer = buffer.slice(lineEnd + 2);
+
+        // Multi-line responses have a dash after the code (e.g. "250-...")
+        // Wait for the final line (space after code: "250 ...")
+        const code = parseInt(line.slice(0, 3), 10);
+        const isFinal = line.charAt(3) !== "-";
+        if (!isFinal) continue;
+
+        if (step === "greeting") {
+          if (code >= 200 && code < 300) {
+            step = "ehlo";
+            socket.write("EHLO neorank.co\r\n");
+          } else {
+            finish({ valid: true, reason: "could not verify" });
+          }
+        } else if (step === "ehlo") {
+          if (code >= 200 && code < 300) {
+            step = "mailfrom";
+            socket.write("MAIL FROM:<verify@neorank.co>\r\n");
+          } else {
+            finish({ valid: true, reason: "could not verify" });
+          }
+        } else if (step === "mailfrom") {
+          if (code >= 200 && code < 300) {
+            step = "rcptto";
+            socket.write(`RCPT TO:<${email}>\r\n`);
+          } else {
+            finish({ valid: true, reason: "could not verify" });
+          }
+        } else if (step === "rcptto") {
+          step = "done";
+          if (code === 250) {
+            finish({ valid: true });
+          } else if (code === 550 || code === 551 || code === 552 || code === 553) {
+            finish({ valid: false, reason: "mailbox not found" });
+          } else {
+            finish({ valid: true, reason: "could not verify" });
+          }
+        }
+      }
+    });
+
+    socket.on("error", () => {
+      finish({ valid: true, reason: "could not verify" });
+    });
+  });
+}
+
+// --- Deep Email Validation (chained pipeline) ---
+
+export interface DeepValidationResult {
+  valid: boolean;
+  reason?: string;
+}
+
+/**
+ * Multi-step email validation pipeline:
+ *   1. Syntax check
+ *   2. Disposable domain check
+ *   3. MX record lookup (3s timeout)
+ *   4. SMTP RCPT TO verification (only when isGuessed = true)
+ */
+export async function validateEmailDeep(
+  email: string,
+  { isGuessed = false }: { isGuessed?: boolean } = {},
+): Promise<DeepValidationResult> {
+  // 1. Syntax check
+  const syntaxOk = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email);
+  if (!syntaxOk) {
+    return { valid: false, reason: "invalid syntax" };
+  }
+
+  // 2. Disposable domain check
+  if (isDisposableEmail(email)) {
+    return { valid: false, reason: "disposable email domain" };
+  }
+
+  // 3. MX record lookup (with 3s timeout via validateEmail)
+  const hasMx = await validateEmail(email);
+  if (!hasMx) {
+    return { valid: false, reason: "no MX records" };
+  }
+
+  // 4. SMTP RCPT TO verification (only for pattern-guessed emails)
+  if (isGuessed) {
+    return await verifyEmailSMTP(email);
+  }
+
+  return { valid: true };
 }

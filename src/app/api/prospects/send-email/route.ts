@@ -5,12 +5,23 @@ import {
   saveEmailSend,
   updateProspectStatus,
   getTotalUsers,
+  linkProspectToReport,
 } from "@/lib/db";
-import { generateOutreachEmail } from "@/lib/email-templates";
-import { FREE_SLOTS, APP_URL } from "@/lib/constants";
+import {
+  generateOutreachEmail,
+  addUnsubscribeFooter,
+} from "@/lib/email-templates";
+import { FREE_SLOTS, APP_URL, FREE_QUERY_COUNT, FREE_RUNS_PER_QUERY } from "@/lib/constants";
 import { requireAdmin } from "@/lib/admin";
+import { randomUUID } from "crypto";
+import { runScanForBusiness } from "@/lib/scanner";
+
+export const maxDuration = 120;
 
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+// In-memory lock to prevent concurrent scans for the same prospect
+const scanningProspects = new Set<string>();
 
 export async function POST(request: Request) {
   const adminCheck = await requireAdmin(request);
@@ -95,30 +106,48 @@ export async function POST(request: Request) {
       emailBody = emailBody || generated.body;
     }
 
-    // 3. Send email via Resend
+    // 3. Append CAN-SPAM unsubscribe footer
+    const unsubToken = randomUUID();
+    const finalBody = addUnsubscribeFooter(emailBody, unsubToken);
+
+    // 4. Send email via Resend
     const fromEmail = process.env.EMAIL_FROM || "bek@abdik.me";
-    const { error: sendError } = await resend.emails.send({
+    const { data, error: sendError } = await resend.emails.send({
       from: fromEmail,
       to: prospect.email,
       subject,
-      text: emailBody,
+      text: finalBody,
     });
 
     if (sendError) {
-      throw new Error(sendError.message);
+      console.error("Resend API error:", sendError);
+      return NextResponse.json(
+        { error: `Failed to send email: ${sendError.message}` },
+        { status: 500 }
+      );
     }
 
-    // 4. Save to email_sends table
-    await saveEmailSend({
-      prospectId,
-      templateName: "outreach_v1",
-      subject,
-      body: emailBody,
-      status: "sent",
-    });
+    // 5. Save to email_sends table + update prospect status
+    // These are post-send DB operations. If they fail, the email was still
+    // sent successfully, so we return success to the user and log the error.
+    try {
+      await saveEmailSend({
+        prospectId,
+        templateName: "outreach_v1",
+        subject,
+        body: finalBody,
+        status: "sent",
+        resendId: data?.id || null,
+        unsubscribeToken: unsubToken,
+      });
 
-    // 5. Update prospect status to 'emailed'
-    await updateProspectStatus(prospectId, "emailed");
+      await updateProspectStatus(prospectId, "emailed");
+    } catch (dbError) {
+      console.error(
+        "Email sent successfully but failed to save to database:",
+        dbError
+      );
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -166,11 +195,38 @@ export async function PUT(request: Request) {
       );
     }
 
+    // If no scan report exists, run an on-demand scan
     let reportData = null;
-    if (prospect.scan_report_id) {
+    let scanReportId = prospect.scan_report_id;
+
+    if (!scanReportId) {
+      if (scanningProspects.has(prospectId)) {
+        return NextResponse.json(
+          { error: "A scan is already in progress for this prospect" },
+          { status: 409 }
+        );
+      }
+
+      try {
+        scanningProspects.add(prospectId);
+        const scanResult = await runScanForBusiness(
+          prospect.business_name,
+          prospect.business_url,
+          prospect.city,
+          FREE_QUERY_COUNT,
+          FREE_RUNS_PER_QUERY
+        );
+        scanReportId = scanResult.id;
+        await linkProspectToReport(prospectId, scanReportId);
+      } finally {
+        scanningProspects.delete(prospectId);
+      }
+    }
+
+    if (scanReportId) {
       const reportResult = await query(
         "SELECT * FROM scan_reports WHERE id = $1",
-        [prospect.scan_report_id]
+        [scanReportId]
       );
       reportData = reportResult.rows[0];
     }
@@ -178,8 +234,8 @@ export async function PUT(request: Request) {
     const totalUsers = await getTotalUsers();
     const slotsLeft = Math.max(0, FREE_SLOTS - totalUsers);
 
-    const reportUrl = prospect.scan_report_id
-      ? `${APP_URL}/report/${prospect.scan_report_id}`
+    const reportUrl = scanReportId
+      ? `${APP_URL}/report/${scanReportId}`
       : APP_URL;
 
     const parsed = reportData?.report_data
@@ -207,6 +263,7 @@ export async function PUT(request: Request) {
       businessName: prospect.business_name,
       subject: generated.subject,
       body: generated.body,
+      scanned: !prospect.scan_report_id,
     });
   } catch (error) {
     console.error("Preview email error:", error);

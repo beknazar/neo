@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { findEmailFromWebsite } from "@/lib/prospects";
+import {
+  findEmailFromWebsite,
+  findEmailAdvanced,
+  guessEmailByPattern,
+  isDisposableEmail,
+  validateEmail,
+  validateEmailDeep,
+  DISPOSABLE_EMAIL_DOMAINS,
+} from "@/lib/prospects";
 
 // ---------------------------------------------------------------------------
 // findEmailFromWebsite — email extraction and ranking
@@ -342,4 +350,254 @@ describe("aggregator URL filtering", () => {
     expect(shouldSkipUrl("https://www.google.com/maps/place/medspa")).toBe(true);
     expect(shouldSkipUrl("https://www.youtube.com/watch?v=abc")).toBe(true);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Disposable email domain detection
+// ---------------------------------------------------------------------------
+describe("isDisposableEmail", () => {
+  it("detects mailinator.com as disposable", () => {
+    expect(isDisposableEmail("someone@mailinator.com")).toBe(true);
+  });
+
+  it("detects guerrillamail.com as disposable", () => {
+    expect(isDisposableEmail("test@guerrillamail.com")).toBe(true);
+  });
+
+  it("detects yopmail.com as disposable", () => {
+    expect(isDisposableEmail("user@yopmail.com")).toBe(true);
+  });
+
+  it("does not flag legitimate domains", () => {
+    expect(isDisposableEmail("hello@gmail.com")).toBe(false);
+    expect(isDisposableEmail("info@mybusiness.com")).toBe(false);
+  });
+
+  it("has at least 30 domains in the blocklist", () => {
+    expect(DISPOSABLE_EMAIL_DOMAINS.length).toBeGreaterThanOrEqual(30);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateEmail — MX lookup with 3s timeout
+// ---------------------------------------------------------------------------
+describe("validateEmail", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns true when domain has MX records", async () => {
+    const dns = await import("dns");
+    vi.spyOn(dns.promises, "resolveMx").mockResolvedValue([
+      { exchange: "mx.example.com", priority: 10 },
+    ]);
+
+    const result = await validateEmail("info@example.com");
+    expect(result).toBe(true);
+  });
+
+  it("returns false when domain has no MX records", async () => {
+    const dns = await import("dns");
+    vi.spyOn(dns.promises, "resolveMx").mockResolvedValue([]);
+
+    const result = await validateEmail("info@nodomain.fake");
+    expect(result).toBe(false);
+  });
+
+  it("returns false when DNS lookup times out (within 3s budget)", async () => {
+    const dns = await import("dns");
+    vi.spyOn(dns.promises, "resolveMx").mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve([{ exchange: "mx.slow.com", priority: 10 }]), 10_000))
+    );
+
+    const start = Date.now();
+    const result = await validateEmail("info@slow-domain.com");
+    const elapsed = Date.now() - start;
+
+    expect(result).toBe(false);
+    // Should resolve in ~3s due to timeout, not 10s
+    expect(elapsed).toBeLessThan(5_000);
+  });
+
+  it("returns false for email with no domain part", async () => {
+    const result = await validateEmail("nodomain");
+    expect(result).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateEmailDeep — chained validation pipeline
+// ---------------------------------------------------------------------------
+describe("validateEmailDeep", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("rejects invalid syntax", async () => {
+    const result = await validateEmailDeep("not-an-email");
+    expect(result).toEqual({ valid: false, reason: "invalid syntax" });
+  });
+
+  it("rejects disposable email domains", async () => {
+    const result = await validateEmailDeep("user@mailinator.com");
+    expect(result).toEqual({ valid: false, reason: "disposable email domain" });
+  });
+
+  it("rejects when domain has no MX records", async () => {
+    const dns = await import("dns");
+    vi.spyOn(dns.promises, "resolveMx").mockResolvedValue([]);
+
+    const result = await validateEmailDeep("info@nomx.fake");
+    expect(result).toEqual({ valid: false, reason: "no MX records" });
+  });
+
+  it("returns valid for a good domain (non-guessed)", async () => {
+    const dns = await import("dns");
+    vi.spyOn(dns.promises, "resolveMx").mockResolvedValue([
+      { exchange: "mx.gooddomain.com", priority: 10 },
+    ]);
+
+    const result = await validateEmailDeep("info@gooddomain.com");
+    expect(result).toEqual({ valid: true });
+  });
+
+  it("returns no MX records when DNS times out", async () => {
+    const dns = await import("dns");
+    vi.spyOn(dns.promises, "resolveMx").mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve([{ exchange: "mx.slow.com", priority: 10 }]), 10_000))
+    );
+
+    const result = await validateEmailDeep("info@slow-dns.com");
+    expect(result).toEqual({ valid: false, reason: "no MX records" });
+  }, 10_000);
+});
+
+// ---------------------------------------------------------------------------
+// guessEmailByPattern — pattern guessing with MX validation
+// ---------------------------------------------------------------------------
+describe("guessEmailByPattern", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns first MX-valid email from pattern list", async () => {
+    const dns = await import("dns");
+    // First call (info@) fails, second call (hello@) succeeds
+    let callCount = 0;
+    vi.spyOn(dns.promises, "resolveMx").mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) return Promise.resolve([]); // info@ fails
+      return Promise.resolve([{ exchange: "mx.coolbiz.com", priority: 10 }]);
+    });
+
+    const result = await guessEmailByPattern("https://coolbiz.com");
+    expect(result).toBe("hello@coolbiz.com");
+  });
+
+  it("skips aggregator domains (yelp.com, facebook.com)", async () => {
+    const result1 = await guessEmailByPattern("https://www.yelp.com/biz/medspa");
+    expect(result1).toBeNull();
+
+    const result2 = await guessEmailByPattern("https://www.facebook.com/mybiz");
+    expect(result2).toBeNull();
+
+    const result3 = await guessEmailByPattern("https://www.instagram.com/coolspa");
+    expect(result3).toBeNull();
+  });
+
+  it("returns null when no patterns pass MX validation", async () => {
+    const dns = await import("dns");
+    vi.spyOn(dns.promises, "resolveMx").mockResolvedValue([]);
+
+    const result = await guessEmailByPattern("https://nomail-domain.fake");
+    expect(result).toBeNull();
+  });
+
+  it("returns null for empty or missing URL", async () => {
+    const result1 = await guessEmailByPattern("");
+    expect(result1).toBeNull();
+
+    const result2 = await guessEmailByPattern("not-a-valid-url");
+    // isAggregatorDomain will return true for invalid URLs
+    expect(result2).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DuckDuckGo email extraction (via findEmailAdvanced)
+// ---------------------------------------------------------------------------
+describe("findEmailAdvanced — DuckDuckGo email extraction", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("extracts emails from DuckDuckGo HTML when website scrape fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url: string) => {
+        // Website scrape pages return nothing
+        if (
+          url.includes("nobiz-site.com") ||
+          url.includes("nobiz-site.com/contact") ||
+          url.includes("nobiz-site.com/contact-us") ||
+          url.includes("nobiz-site.com/about")
+        ) {
+          return Promise.resolve({ ok: false, text: async () => "" });
+        }
+        // DuckDuckGo returns HTML with an email
+        if (url.includes("duckduckgo.com")) {
+          return Promise.resolve({
+            ok: true,
+            text: async () =>
+              '<html><body>Results for Cool Biz: contact them at info@coolbiz-found.com or visit their site</body></html>',
+          });
+        }
+        // YellowPages returns nothing
+        if (url.includes("yellowpages.com")) {
+          return Promise.resolve({ ok: false, text: async () => "" });
+        }
+        return Promise.resolve({ ok: false, text: async () => "" });
+      })
+    );
+
+    const result = await findEmailAdvanced(
+      "Cool Biz",
+      "https://nobiz-site.com",
+      "San Francisco"
+    );
+    expect(result).toBe("info@coolbiz-found.com");
+  }, 15_000);
+
+  it("filters false positives from DuckDuckGo results", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url: string) => {
+        // Website scrape fails
+        if (!url.includes("duckduckgo.com") && !url.includes("yellowpages.com")) {
+          return Promise.resolve({ ok: false, text: async () => "" });
+        }
+        // DuckDuckGo returns only false positive emails
+        if (url.includes("duckduckgo.com")) {
+          return Promise.resolve({
+            ok: true,
+            text: async () =>
+              '<html><body>noreply@site.com test@example.com user@example.com abc@sentry.io</body></html>',
+          });
+        }
+        // YellowPages returns nothing
+        return Promise.resolve({ ok: false, text: async () => "" });
+      })
+    );
+
+    // Mock DNS to fail so pattern guessing also returns null
+    const dns = await import("dns");
+    vi.spyOn(dns.promises, "resolveMx").mockResolvedValue([]);
+
+    const result = await findEmailAdvanced(
+      "Some Biz",
+      "https://somebiz.fake",
+      "Austin"
+    );
+    expect(result).toBeNull();
+  }, 15_000);
 });

@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
-import { generateQueries } from "@/lib/queries";
-import { runQueryBatch } from "@/lib/perplexity";
-import { scoreResults } from "@/lib/scorer";
-import { generateFixes } from "@/lib/report-generator";
-import { saveReport, ensureDb, generateSlug, ensureUniqueSlug } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { FREE_QUERY_COUNT, FREE_RUNS_PER_QUERY, FULL_QUERY_COUNT, FULL_RUNS_PER_QUERY } from "@/lib/constants";
+import { runScanForBusiness } from "@/lib/scanner";
 
 export const maxDuration = 300;
 
@@ -42,36 +38,16 @@ export async function POST(request: Request) {
     const queryCount = isAuthenticated ? FULL_QUERY_COUNT : FREE_QUERY_COUNT;
     const runsPerQuery = isAuthenticated ? FULL_RUNS_PER_QUERY : FREE_RUNS_PER_QUERY;
 
-    await ensureDb();
-
-    const queries = generateQueries(city).slice(0, queryCount);
-    const results = await runQueryBatch(queries, runsPerQuery, 5);
-    const scanReport = scoreResults(
-      results,
+    const report = await runScanForBusiness(
       businessName,
       businessUrl,
       city,
-      competitors ?? []
-    );
-    const fullReport = await generateFixes(scanReport);
-
-    // Save to database
-    const slug = await ensureUniqueSlug(generateSlug(businessName, city));
-    const reportId = await saveReport({
-      businessName,
-      businessUrl,
-      city,
-      recommendationScore: fullReport.recommendationScore,
-      shareOfVoice: fullReport.shareOfVoice,
-      totalValidRuns: fullReport.totalValidRuns,
-      totalRuns: fullReport.totalRuns,
-      reportData: fullReport,
-      userId: session?.user?.id,
-      slug,
       queryCount,
-    });
+      runsPerQuery,
+      { competitors: competitors ?? [], userId: session?.user?.id }
+    );
 
-    return NextResponse.json({ ...fullReport, id: reportId, slug });
+    return NextResponse.json(report);
   } catch (error) {
     console.error("Scan error:", error);
     return NextResponse.json(

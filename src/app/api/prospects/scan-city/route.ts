@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { discoverBusinesses, findEmailFromWebsite } from "@/lib/prospects";
+import { discoverBusinesses, findEmailAdvanced } from "@/lib/prospects";
 import { saveProspect } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin";
 import { PROSPECT_STATUS } from "@/lib/constants";
@@ -33,9 +33,7 @@ export async function POST(request: Request) {
       const batch = discovered.slice(i, i + CONCURRENCY);
       const results = await Promise.all(batch.map(async (biz) => {
         let email: string | null = null;
-        if (biz.businessUrl) {
-          email = await findEmailFromWebsite(biz.businessUrl);
-        }
+        email = await findEmailAdvanced(biz.businessName, biz.businessUrl, city);
         const prospectId = await saveProspect({
           businessName: biz.businessName,
           businessUrl: biz.businessUrl,

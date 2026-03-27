@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { Toaster } from "sonner";
+import { PostHogProvider } from "@/components/posthog-provider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -31,7 +33,12 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <PostHogProvider>
+          {children}
+        </PostHogProvider>
+        <Toaster position="bottom-right" theme="dark" duration={4000} visibleToasts={3} />
+      </body>
     </html>
   );
 }

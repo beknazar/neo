@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
+import { usePostHog } from "posthog-js/react";
 import { authClient } from "@/lib/auth-client";
 import { useRequireAuth } from "@/hooks/use-require-auth";
 import { PROSPECT_STATUS, type ProspectStatus, ADMIN_EMAILS } from "@/lib/constants";
@@ -29,6 +31,7 @@ import {
   Hash,
   X,
   Eye,
+  Pencil,
 } from "lucide-react";
 
 const US_CITIES = [
@@ -115,6 +118,7 @@ function ScoreBadge({ score }: { score: number | null | undefined }) {
 export default function ProspectsPage() {
   const router = useRouter();
   const { session, isPending } = useRequireAuth();
+  const posthog = usePostHog();
 
   const [city, setCity] = useState("");
   const [vertical, setVertical] = useState("med spa");
@@ -132,6 +136,13 @@ export default function ProspectsPage() {
     body: string;
   } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [editingEmailId, setEditingEmailId] = useState<string | null>(null);
+  const [editingEmailValue, setEditingEmailValue] = useState("");
+  const [emailSaving, setEmailSaving] = useState(false);
+  const [savedEmailId, setSavedEmailId] = useState<string | null>(null);
+  const [emailValidations, setEmailValidations] = useState<
+    Record<string, { valid: boolean; reason?: string; validating?: boolean }>
+  >({});
 
   useEffect(() => {
     if (session?.user?.id) {
@@ -169,8 +180,12 @@ export default function ProspectsPage() {
         throw new Error(data.error || "Discovery failed");
       }
 
+      const data = await res.json();
+      const count = Array.isArray(data.prospects) ? data.prospects.length : 0;
       setDiscoverStatus("done");
       await fetchProspects();
+      toast.success(`Found ${count} businesses`);
+      posthog?.capture('prospect_discovered', { city, vertical, count });
     } catch (err) {
       setDiscoverError(
         err instanceof Error ? err.message : "Something went wrong"
@@ -182,6 +197,8 @@ export default function ProspectsPage() {
   async function handlePreviewEmail(prospectId: string) {
     setPreviewLoading(true);
     setEmailError(null);
+
+    const prospect = prospects.find((p) => p.id === prospectId);
 
     try {
       const res = await fetch("/api/prospects/send-email", {
@@ -197,6 +214,7 @@ export default function ProspectsPage() {
 
       const data = await res.json();
       setEmailModal({ prospectId, ...data });
+      posthog?.capture('email_preview_opened', { prospect_id: prospectId, has_scan_report: !!prospect?.scan_report_id });
     } catch (err) {
       setEmailError(
         err instanceof Error ? err.message : "Failed to load preview"
@@ -231,16 +249,97 @@ export default function ProspectsPage() {
         )
       );
       setEmailModal(null);
+      toast.success(`Email sent to ${emailModal.to}`);
+      posthog?.capture('email_sent', { prospect_id: emailModal.prospectId });
     } catch (err) {
-      setEmailError(
-        err instanceof Error ? err.message : "Failed to send email"
-      );
+      const reason = err instanceof Error ? err.message : "Failed to send email";
+      setEmailError(reason);
+      toast.error(`Failed to send: ${reason}`);
     } finally {
       setSendingIds((prev) => {
         const next = new Set(prev);
         next.delete(prospectId);
         return next;
       });
+    }
+  }
+
+  function startEditingEmail(prospect: Prospect) {
+    setEditingEmailId(prospect.id);
+    setEditingEmailValue(prospect.email || "");
+  }
+
+  function cancelEditingEmail() {
+    setEditingEmailId(null);
+    setEditingEmailValue("");
+  }
+
+  async function saveEmail(prospectId: string) {
+    const trimmed = editingEmailValue.trim();
+    if (!trimmed) {
+      cancelEditingEmail();
+      return;
+    }
+
+    setEmailSaving(true);
+
+    // Optimistic update
+    setProspects((prev) =>
+      prev.map((p) =>
+        p.id === prospectId ? { ...p, email: trimmed } : p
+      )
+    );
+
+    // Mark as validating
+    setEmailValidations((prev) => ({
+      ...prev,
+      [prospectId]: { valid: true, validating: true },
+    }));
+
+    setEditingEmailId(null);
+    setEditingEmailValue("");
+
+    try {
+      const res = await fetch("/api/prospects/update-email", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prospectId, email: trimmed }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to update email");
+      }
+
+      const data = await res.json();
+
+      // Update validation status
+      setEmailValidations((prev) => ({
+        ...prev,
+        [prospectId]: {
+          valid: data.validation.valid,
+          reason: data.validation.reason,
+          validating: false,
+        },
+      }));
+
+      // Show brief "Saved" indicator
+      setSavedEmailId(prospectId);
+      setTimeout(() => setSavedEmailId(null), 1500);
+      posthog?.capture('email_edited', { prospect_id: prospectId });
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update email"
+      );
+      // Revert optimistic update
+      await fetchProspects();
+      setEmailValidations((prev) => {
+        const next = { ...prev };
+        delete next[prospectId];
+        return next;
+      });
+    } finally {
+      setEmailSaving(false);
     }
   }
 
@@ -535,11 +634,77 @@ export default function ProspectsPage() {
                         </span>
                       )}
 
-                      {p.email && (
+                      {editingEmailId === p.id ? (
+                        <span className="inline-flex items-center gap-1">
+                          <Mail className="size-3 text-muted-foreground" />
+                          <Input
+                            className="h-7 w-48 text-xs"
+                            value={editingEmailValue}
+                            onChange={(e) => setEditingEmailValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                saveEmail(p.id);
+                              } else if (e.key === "Escape") {
+                                e.preventDefault();
+                                cancelEditingEmail();
+                              }
+                            }}
+                            onBlur={() => cancelEditingEmail()}
+                            autoFocus
+                            onFocus={(e) => e.target.select()}
+                            placeholder="email@example.com"
+                            disabled={emailSaving}
+                          />
+                        </span>
+                      ) : p.email ? (
                         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                           <Mail className="size-3" />
                           {p.email}
+                          {savedEmailId === p.id ? (
+                            <span className="ml-0.5 animate-in fade-in text-primary text-xs font-medium">
+                              Saved ✓
+                            </span>
+                          ) : (
+                            <>
+                              {/* Validation dot */}
+                              {emailValidations[p.id] && (
+                                <span
+                                  className={`ml-0.5 inline-block size-2 rounded-full ${
+                                    emailValidations[p.id].validating
+                                      ? "bg-neo-amber animate-pulse"
+                                      : emailValidations[p.id].valid
+                                        ? emailValidations[p.id].reason
+                                          ? "bg-neo-amber"
+                                          : "bg-primary"
+                                        : "bg-destructive"
+                                  }`}
+                                  title={
+                                    emailValidations[p.id].validating
+                                      ? "Validating..."
+                                      : emailValidations[p.id].valid
+                                        ? emailValidations[p.id].reason || "Verified"
+                                        : emailValidations[p.id].reason || "Invalid"
+                                  }
+                                />
+                              )}
+                              <button
+                                onClick={() => startEditingEmail(p)}
+                                className="ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                              >
+                                <Pencil className="size-3" />
+                              </button>
+                            </>
+                          )}
                         </span>
+                      ) : (
+                        <button
+                          onClick={() => startEditingEmail(p)}
+                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                        >
+                          <Mail className="size-3" />
+                          Add email
+                        </button>
                       )}
 
                       {p.business_url && (
