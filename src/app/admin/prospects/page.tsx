@@ -177,6 +177,8 @@ export default function ProspectsPage() {
     total: number;
   } | null>(null);
   const [emailStats, setEmailStats] = useState<Record<string, EmailStats>>({});
+  const [filterCity, setFilterCity] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("all");
 
   async function fetchEmailStats(prospectId: string) {
     try {
@@ -316,6 +318,7 @@ export default function ProspectsPage() {
       const data = await res.json();
       const count = Array.isArray(data.prospects) ? data.prospects.length : 0;
       setDiscoverStatus("done");
+      setFilterCity(city);
       await fetchProspects();
       toast.success(`Found ${count} businesses`);
       posthog?.capture('prospect_discovered', { city, vertical, count });
@@ -475,6 +478,21 @@ export default function ProspectsPage() {
       setEmailSaving(false);
     }
   }
+
+  const availableCities = useMemo(
+    () => Array.from(new Set(prospects.map((p) => p.city))).sort(),
+    [prospects]
+  );
+
+  const filteredProspects = useMemo(
+    () =>
+      prospects.filter(
+        (p) =>
+          (filterCity === "all" || p.city === filterCity) &&
+          (filterStatus === "all" || p.status === filterStatus)
+      ),
+    [prospects, filterCity, filterStatus]
+  );
 
   const statusCounts = useMemo(
     () =>
@@ -686,28 +704,15 @@ export default function ProspectsPage() {
           {/* List header */}
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-baseline gap-2">
-              <h2 className="text-sm font-semibold">All Prospects</h2>
+              <h2 className="text-sm font-semibold">
+                {filterCity !== "all" || filterStatus !== "all" ? "Filtered Prospects" : "All Prospects"}
+              </h2>
               <span className="text-xs tabular-nums text-muted-foreground">
-                {prospects.length} total
+                {filteredProspects.length}{filteredProspects.length !== prospects.length ? ` of ${prospects.length}` : ""} total
               </span>
             </div>
             {prospects.length > 0 && (
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2">
-                  {Object.entries(statusCounts).map(([status, count]) => (
-                    <span
-                      key={status}
-                      className="inline-flex items-center gap-1 text-xs text-muted-foreground"
-                    >
-                      <span
-                        className={`inline-block size-1.5 rounded-full ${
-                          STATUS_CONFIG[status]?.dot || STATUS_CONFIG[PROSPECT_STATUS.DISCOVERED].dot
-                        }`}
-                      />
-                      {count} {STATUS_CONFIG[status]?.label || status}
-                    </span>
-                  ))}
-                </div>
                 {prospects.some(isScannable) && (
                   <Button
                     variant="outline"
@@ -732,26 +737,93 @@ export default function ProspectsPage() {
             )}
           </div>
 
-          {prospects.length === 0 ? (
+          {/* Filter chips */}
+          {prospects.length > 0 && (
+            <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+              {/* City filters */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground">City:</span>
+                <Badge
+                  variant={filterCity === "all" ? "default" : "outline"}
+                  className="cursor-pointer text-xs"
+                  onClick={() => setFilterCity("all")}
+                >
+                  All
+                </Badge>
+                {availableCities.map((c) => (
+                  <Badge
+                    key={c}
+                    variant={filterCity === c ? "default" : "outline"}
+                    className="cursor-pointer text-xs"
+                    onClick={() => setFilterCity(filterCity === c ? "all" : c)}
+                  >
+                    {c}
+                  </Badge>
+                ))}
+              </div>
+
+              {/* Status filters */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground">Status:</span>
+                <Badge
+                  variant={filterStatus === "all" ? "default" : "outline"}
+                  className="cursor-pointer text-xs"
+                  onClick={() => setFilterStatus("all")}
+                >
+                  All
+                </Badge>
+                {Object.entries(statusCounts).map(([status, count]) => (
+                  <Badge
+                    key={status}
+                    variant={filterStatus === status ? "default" : "outline"}
+                    className="cursor-pointer text-xs"
+                    onClick={() => setFilterStatus(filterStatus === status ? "all" : status)}
+                  >
+                    <span
+                      className={`inline-block size-1.5 rounded-full ${
+                        STATUS_CONFIG[status]?.dot || STATUS_CONFIG[PROSPECT_STATUS.DISCOVERED].dot
+                      }`}
+                    />
+                    {count} {STATUS_CONFIG[status]?.label || status}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {filteredProspects.length === 0 ? (
             /* Empty state */
             <Card className="border-dashed border-border bg-card">
               <CardContent className="flex flex-col items-center justify-center py-16">
                 <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-muted">
                   <MapPin className="size-5 text-muted-foreground" />
                 </div>
-                <p className="mb-1 text-sm font-medium">
-                  No prospects yet
-                </p>
-                <p className="text-center text-xs text-muted-foreground">
-                  Enter a city above and hit Discover to find businesses in that
-                  area.
-                </p>
+                {prospects.length === 0 ? (
+                  <>
+                    <p className="mb-1 text-sm font-medium">
+                      No prospects yet
+                    </p>
+                    <p className="text-center text-xs text-muted-foreground">
+                      Enter a city above and hit Discover to find businesses in that
+                      area.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="mb-1 text-sm font-medium">
+                      No matching prospects
+                    </p>
+                    <p className="text-center text-xs text-muted-foreground">
+                      Try adjusting your city or status filters.
+                    </p>
+                  </>
+                )}
               </CardContent>
             </Card>
           ) : (
             /* Prospect rows */
             <div className="overflow-hidden rounded-xl border border-border bg-card">
-              {prospects.map((p, index) => (
+              {filteredProspects.map((p, index) => (
                 <div
                   key={p.id}
                   className={`group flex items-center gap-4 px-4 py-3 transition-colors hover:bg-neo-surface ${

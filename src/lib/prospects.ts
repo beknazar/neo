@@ -223,6 +223,41 @@ async function pollRunCompletion(
   throw new Error(`Apify run timed out after ${maxWaitMs}ms`);
 }
 
+// --- City Relevance Filter ---
+
+const MAJOR_US_CITIES = [
+  "new york", "los angeles", "chicago", "houston", "phoenix",
+  "philadelphia", "san antonio", "san diego", "dallas", "san jose",
+  "san francisco", "seattle", "denver", "boston", "miami", "atlanta",
+];
+
+/**
+ * Check if a discovered business is likely relevant to the target city.
+ * Filters out results that explicitly mention a DIFFERENT major US city.
+ */
+function isRelevantToCity(
+  businessName: string,
+  address: string | null,
+  targetCity: string,
+): boolean {
+  const name = businessName.toLowerCase();
+  const target = targetCity.toLowerCase();
+
+  // If name mentions the target city, it's relevant
+  if (name.includes(target)) return true;
+
+  // If address mentions the target city, it's relevant
+  if (address?.toLowerCase().includes(target)) return true;
+
+  // Check if name mentions a DIFFERENT major US city — if so, it's not relevant
+  for (const city of MAJOR_US_CITIES) {
+    if (city !== target && name.includes(city)) return false;
+  }
+
+  // No city mentioned in name — probably relevant (generic name)
+  return true;
+}
+
 // --- Discovery: Free Fallback (YellowPages + DuckDuckGo) ---
 
 const SKIP_DOMAINS = new Set([
@@ -290,7 +325,23 @@ async function discoverBusinessesFree(
     );
   }
 
-  return deduplicateBusinesses(results).slice(0, limit);
+  // Filter out results that explicitly mention a different city
+  const relevant = results.filter((biz) =>
+    isRelevantToCity(biz.businessName, biz.address, city)
+  );
+
+  if (relevant.length === 0) {
+    console.warn(
+      `[discovery:free] All ${results.length} results were filtered out as irrelevant to "${city}"`
+    );
+    return [];
+  }
+
+  console.log(
+    `[discovery:free] City filter: ${results.length} -> ${relevant.length} results for "${city}"`
+  );
+
+  return deduplicateBusinesses(relevant).slice(0, limit);
 }
 
 /**
@@ -391,6 +442,9 @@ async function scrapeDuckDuckGo(
         .trim() || rawTitle.trim();
 
     if (businessName.length < 3) continue;
+
+    // Skip results that explicitly mention a different city
+    if (!isRelevantToCity(businessName, null, city)) continue;
 
     businesses.push({
       businessName,
