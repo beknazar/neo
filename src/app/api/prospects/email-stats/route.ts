@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin";
 
+/** Batch email stats: accepts comma-separated prospect IDs. */
 export async function GET(request: Request) {
   const adminCheck = await requireAdmin(request);
   if (!adminCheck.authorized) {
@@ -9,60 +10,63 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const prospectId = searchParams.get("prospectId");
+  const ids = searchParams.get("ids");
 
-  if (!prospectId) {
+  if (!ids) {
     return NextResponse.json(
-      { error: "prospectId is required" },
+      { error: "ids query param is required (comma-separated)" },
       { status: 400 }
     );
   }
 
+  const prospectIds = ids.split(",").map((id) => id.trim()).filter(Boolean);
+  if (prospectIds.length === 0) {
+    return NextResponse.json({ stats: {} });
+  }
+
   try {
-    // Get most recent email send for this prospect
-    const sendResult = await query(
-      `SELECT id, subject, created_at AS sent_at, opened_at, clicked_at
-       FROM email_sends
-       WHERE prospect_id = $1
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [prospectId]
+    // Single query with JOIN — replaces N+1 pattern
+    const result = await query(
+      `SELECT DISTINCT ON (es.prospect_id)
+         es.prospect_id,
+         es.subject,
+         es.created_at AS sent_at,
+         es.opened_at,
+         es.clicked_at,
+         EXISTS(
+           SELECT 1 FROM email_events ee
+           WHERE ee.email_send_id = es.id
+             AND ee.event_type IN ('email.bounced', 'email.complained')
+         ) AS bounced
+       FROM email_sends es
+       WHERE es.prospect_id = ANY($1)
+       ORDER BY es.prospect_id, es.created_at DESC`,
+      [prospectIds]
     );
 
-    if (sendResult.rows.length === 0) {
-      return NextResponse.json(
-        { error: "No email sends found for this prospect" },
-        { status: 404 }
-      );
+    const stats: Record<string, {
+      sent_at: string;
+      opened_at: string | null;
+      clicked_at: string | null;
+      bounced: boolean;
+      subject: string;
+    }> = {};
+
+    for (const row of result.rows) {
+      stats[row.prospect_id] = {
+        sent_at: row.sent_at,
+        opened_at: row.opened_at,
+        clicked_at: row.clicked_at,
+        bounced: row.bounced,
+        subject: row.subject,
+      };
     }
 
-    const send = sendResult.rows[0];
-
-    // Check for bounce event
-    const bounceResult = await query(
-      `SELECT id FROM email_events
-       WHERE email_send_id = $1
-         AND event_type IN ('email.bounced', 'email.complained')
-       LIMIT 1`,
-      [send.id]
-    );
-
-    return NextResponse.json({
-      sent_at: send.sent_at,
-      opened_at: send.opened_at,
-      clicked_at: send.clicked_at,
-      bounced: bounceResult.rows.length > 0,
-      subject: send.subject,
-    });
+    return NextResponse.json({ stats });
   } catch (error) {
     console.error("Email stats error:", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "An unexpected error occurred",
-      },
+      { error: error instanceof Error ? error.message : "An unexpected error occurred" },
       { status: 500 }
     );
   }

@@ -86,6 +86,13 @@ function timeAgo(dateStr: string): string {
 
 type DiscoverStatus = "idle" | "discovering" | "done" | "error";
 
+/** Prospect has email, no report yet, and hasn't been emailed/signed up. */
+function isScannable(p: Prospect): boolean {
+  return !!(p.email && !p.scan_report_id &&
+    p.status !== PROSPECT_STATUS.EMAILED &&
+    p.status !== PROSPECT_STATUS.SIGNED_UP);
+}
+
 const STATUS_CONFIG: Record<string, { bg: string; dot: string; label: string }> = {
   [PROSPECT_STATUS.DISCOVERED]: { bg: "bg-muted text-muted-foreground", dot: "bg-muted-foreground", label: "Discovered" },
   [PROSPECT_STATUS.SCANNED]: { bg: "bg-primary/10 text-primary", dot: "bg-primary", label: "Scanned" },
@@ -166,7 +173,6 @@ export default function ProspectsPage() {
   >({});
   const [scanningIds, setScanningIds] = useState<Set<string>>(new Set());
   const [scanAllProgress, setScanAllProgress] = useState<{
-    running: boolean;
     current: number;
     total: number;
   } | null>(null);
@@ -192,16 +198,26 @@ export default function ProspectsPage() {
     }
   }, [session?.user?.id]);
 
-  // Fetch email stats for all emailed prospects once prospects are loaded
+  // Batch-fetch email stats for all emailed prospects
   useEffect(() => {
-    const emailed = prospects.filter(
-      (p) => p.status === PROSPECT_STATUS.EMAILED
-    );
-    for (const p of emailed) {
-      if (!emailStats[p.id]) {
-        fetchEmailStats(p.id);
+    const emailedIds = prospects
+      .filter((p) => p.status === PROSPECT_STATUS.EMAILED)
+      .map((p) => p.id);
+    if (emailedIds.length === 0) return;
+
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/prospects/email-stats?ids=${emailedIds.join(",")}`
+        );
+        if (res.ok) {
+          const { stats } = await res.json();
+          if (stats) setEmailStats((prev) => ({ ...prev, ...stats }));
+        }
+      } catch {
+        // non-critical
       }
-    }
+    })();
   }, [prospects]);
 
   async function fetchProspects() {
@@ -216,31 +232,20 @@ export default function ProspectsPage() {
     }
   }
 
-  async function handleScan(prospectId: string) {
+  /** Trigger a scan for one prospect. Returns true on success. */
+  async function scanProspect(prospectId: string): Promise<boolean> {
     setScanningIds((prev) => new Set(prev).add(prospectId));
-
     try {
       const res = await fetch("/api/prospects/send-email", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prospectId }),
       });
-
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || "Scan failed");
       }
-
-      // Refresh prospects to get the updated scan_report_id
-      await fetchProspects();
-      const prospect = prospects.find((p) => p.id === prospectId);
-      toast.success(
-        `Scan complete for ${prospect ? decodeHtml(prospect.business_name) : "prospect"}`
-      );
-      posthog?.capture("prospect_scanned", { prospect_id: prospectId });
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : "Scan failed";
-      toast.error(reason);
+      return true;
     } finally {
       setScanningIds((prev) => {
         const next = new Set(prev);
@@ -250,56 +255,40 @@ export default function ProspectsPage() {
     }
   }
 
-  async function handleScanAll() {
-    const unscanned = prospects.filter(
-      (p) =>
-        p.email &&
-        !p.scan_report_id &&
-        p.status !== PROSPECT_STATUS.EMAILED &&
-        p.status !== PROSPECT_STATUS.SIGNED_UP
-    );
+  async function handleScan(prospectId: string) {
+    const name = prospects.find((p) => p.id === prospectId)?.business_name;
+    try {
+      await scanProspect(prospectId);
+      await fetchProspects();
+      toast.success(`Scan complete for ${name ? decodeHtml(name) : "prospect"}`);
+      posthog?.capture("prospect_scanned", { prospect_id: prospectId });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Scan failed");
+    }
+  }
 
+  async function handleScanAll() {
+    const unscanned = prospects.filter(isScannable);
     if (unscanned.length === 0) {
       toast.info("No un-scanned prospects with emails to scan");
       return;
     }
 
-    setScanAllProgress({ running: true, current: 0, total: unscanned.length });
+    setScanAllProgress({ current: 0, total: unscanned.length });
 
     for (let i = 0; i < unscanned.length; i++) {
-      setScanAllProgress({ running: true, current: i + 1, total: unscanned.length });
-      const p = unscanned[i];
-      setScanningIds((prev) => new Set(prev).add(p.id));
-
+      setScanAllProgress({ current: i + 1, total: unscanned.length });
       try {
-        const res = await fetch("/api/prospects/send-email", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prospectId: p.id }),
-        });
-
-        if (!res.ok) {
-          const data = await res.json();
-          toast.error(
-            `Scan failed for ${decodeHtml(p.business_name)}: ${data.error || "Unknown error"}`
-          );
-        }
+        await scanProspect(unscanned[i].id);
       } catch (err) {
         toast.error(
-          `Scan failed for ${decodeHtml(p.business_name)}: ${
+          `Scan failed for ${decodeHtml(unscanned[i].business_name)}: ${
             err instanceof Error ? err.message : "Unknown error"
           }`
         );
-      } finally {
-        setScanningIds((prev) => {
-          const next = new Set(prev);
-          next.delete(p.id);
-          return next;
-        });
       }
     }
 
-    // Refresh all prospects after scan-all completes
     await fetchProspects();
     setScanAllProgress(null);
     toast.success(`Scanned ${unscanned.length} prospects`);
@@ -719,20 +708,14 @@ export default function ProspectsPage() {
                     </span>
                   ))}
                 </div>
-                {prospects.some(
-                  (p) =>
-                    p.email &&
-                    !p.scan_report_id &&
-                    p.status !== PROSPECT_STATUS.EMAILED &&
-                    p.status !== PROSPECT_STATUS.SIGNED_UP
-                ) && (
+                {prospects.some(isScannable) && (
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={scanAllProgress?.running}
+                    disabled={scanAllProgress != null}
                     onClick={handleScanAll}
                   >
-                    {scanAllProgress?.running ? (
+                    {scanAllProgress != null ? (
                       <>
                         <Loader2 className="size-3 animate-spin" />
                         Scanning {scanAllProgress.current}/{scanAllProgress.total}...
@@ -900,10 +883,7 @@ export default function ProspectsPage() {
                   {/* Actions */}
                   <div className="flex shrink-0 items-center gap-2">
                     {/* Has email, no report: show Scan button */}
-                    {p.email &&
-                      !p.scan_report_id &&
-                      p.status !== PROSPECT_STATUS.EMAILED &&
-                      p.status !== PROSPECT_STATUS.SIGNED_UP && (
+                    {isScannable(p) && (
                         <Button
                           size="sm"
                           variant="outline"
