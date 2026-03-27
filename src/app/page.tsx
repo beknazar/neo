@@ -24,6 +24,23 @@ type ScanStatus = "idle" | "extracting" | "confirming" | "scanning" | "error";
 
 const CURRENT_YEAR = new Date().getFullYear();
 
+/** Lightweight client-side vertical inference from URL + business name. */
+function inferVertical(url: string, name: string): string | undefined {
+  const text = `${url} ${name}`.toLowerCase();
+  const rules: [string, string[]][] = [
+    ["personal injury lawyer", ["law", "attorney", "legal"]],
+    ["dentist", ["dental", "dentist", "orthodont"]],
+    ["real estate agent", ["real estate", "realty", "realtor"]],
+    ["med spa", ["med spa", "medspa", "aesthetic", "botox"]],
+    ["plumber", ["plumb"]],
+    ["plastic surgeon", ["plastic surg", "cosmetic surg"]],
+  ];
+  for (const [vertical, keywords] of rules) {
+    if (keywords.some((kw) => text.includes(kw))) return vertical;
+  }
+  return undefined;
+}
+
 export default function Home() {
   const router = useRouter();
   const { data: session } = authClient.useSession();
@@ -80,7 +97,12 @@ export default function Home() {
       const res = await fetch("/api/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessName, businessUrl, city }),
+        body: JSON.stringify({
+          businessName,
+          businessUrl,
+          city,
+          vertical: inferVertical(businessUrl, businessName),
+        }),
       });
 
       if (intervalRef.current) clearInterval(intervalRef.current);
@@ -177,7 +199,7 @@ export default function Home() {
             id="url"
             value={businessUrl}
             onChange={(e) => setBusinessUrl(e.target.value)}
-            placeholder="glowmedspa.com"
+            placeholder="yourbusiness.com"
             onKeyDown={(e) => e.key === "Enter" && handleExtract()}
           />
         </div>
@@ -304,7 +326,7 @@ export default function Home() {
                 </h1>
 
                 <p className="mt-5 max-w-md text-[15px] leading-relaxed text-muted-foreground">
-                  When patients ask ChatGPT, Perplexity, or Gemini for med spa
+                  When customers ask ChatGPT, Perplexity, or Gemini for
                   recommendations, does your business appear? Neo scans the
                   engines that matter and tells you exactly where you stand.
                 </p>

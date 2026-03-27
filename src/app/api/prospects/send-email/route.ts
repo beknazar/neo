@@ -13,8 +13,19 @@ import {
 } from "@/lib/email-templates";
 import { FREE_SLOTS, APP_URL, FREE_QUERY_COUNT, FREE_RUNS_PER_QUERY, PROSPECT_STATUS } from "@/lib/constants";
 import { requireAdmin } from "@/lib/admin";
+
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&#x27;/g, "'");
+}
 import { randomUUID } from "crypto";
 import { runScanForBusiness } from "@/lib/scanner";
+import { inferVerticalFromUrl } from "@/lib/queries";
 
 export const maxDuration = 120;
 
@@ -88,16 +99,20 @@ export async function POST(request: Request) {
           : reportData.report_data
         : null;
 
+      const competitors = Array.isArray(parsed?.competitorMentions) ? parsed.competitorMentions : [];
+      const topCompetitorName = competitors[0]?.name ?? "your top competitor";
+      const topCompetitorCount = competitors[0]?.count ?? 0;
+
       const generated = generateOutreachEmail({
-        businessName: prospect.business_name,
+        businessName: decodeHtmlEntities(prospect.business_name),
         city: prospect.city,
         score: parsed?.recommendationScore ?? 0,
         visibleCount: parsed?.strongQueries?.length ?? 0,
         totalQueries:
           (parsed?.strongQueries?.length ?? 0) +
           (parsed?.gapQueries?.length ?? 0) || 25,
-        topCompetitor: parsed?.topCompetitor ?? "your top competitor",
-        competitorMentions: parsed?.competitorMentions ?? 0,
+        topCompetitor: topCompetitorName,
+        competitorMentions: topCompetitorCount,
         reportUrl,
         slotsLeft,
       });
@@ -209,12 +224,16 @@ export async function PUT(request: Request) {
 
       try {
         scanningProspects.add(prospectId);
+        const inferred = inferVerticalFromUrl(
+          `${prospect.business_url} ${prospect.business_name}`
+        );
         const scanResult = await runScanForBusiness(
           prospect.business_name,
           prospect.business_url,
           prospect.city,
           FREE_QUERY_COUNT,
-          FREE_RUNS_PER_QUERY
+          FREE_RUNS_PER_QUERY,
+          { vertical: inferred ?? undefined }
         );
         scanReportId = scanResult.id;
         await linkProspectToReport(prospectId, scanReportId);
@@ -244,23 +263,27 @@ export async function PUT(request: Request) {
         : reportData.report_data
       : null;
 
+    const competitors = Array.isArray(parsed?.competitorMentions) ? parsed.competitorMentions : [];
+    const topCompetitorName = competitors[0]?.name ?? "your top competitor";
+    const topCompetitorCount = competitors[0]?.count ?? 0;
+
     const generated = generateOutreachEmail({
-      businessName: prospect.business_name,
+      businessName: decodeHtmlEntities(prospect.business_name),
       city: prospect.city,
       score: parsed?.recommendationScore ?? 0,
       visibleCount: parsed?.strongQueries?.length ?? 0,
       totalQueries:
         (parsed?.strongQueries?.length ?? 0) +
         (parsed?.gapQueries?.length ?? 0) || 25,
-      topCompetitor: parsed?.topCompetitor ?? "your top competitor",
-      competitorMentions: parsed?.competitorMentions ?? 0,
+      topCompetitor: topCompetitorName,
+      competitorMentions: topCompetitorCount,
       reportUrl,
       slotsLeft,
     });
 
     return NextResponse.json({
       to: prospect.email,
-      businessName: prospect.business_name,
+      businessName: decodeHtmlEntities(prospect.business_name),
       subject: generated.subject,
       body: generated.body,
       scanned: !prospect.scan_report_id,

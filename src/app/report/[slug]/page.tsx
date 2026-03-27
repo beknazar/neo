@@ -23,6 +23,16 @@ type PageProps = {
   params: Promise<{ slug: string }>;
 };
 
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&#x27;/g, "'");
+}
+
 /* -------------------------------------------------------------------------- */
 /*  SEO Metadata                                                              */
 /* -------------------------------------------------------------------------- */
@@ -38,11 +48,12 @@ export async function generateMetadata({
   if (!row) return { title: "Report Not Found" };
 
   const report = row.report_data;
+  const name = decodeHtmlEntities(report.businessName);
   return {
-    title: `${report.businessName} AI Visibility Report — Neo`,
-    description: `${report.businessName} scored ${report.recommendationScore}/100 for AI search visibility in ${report.city}. ${report.strongQueries.length} visible queries, ${report.gapQueries.length} gaps found.`,
+    title: `${name} AI Visibility Report — Neo`,
+    description: `${name} scored ${report.recommendationScore}/100 for AI search visibility in ${report.city}. ${report.strongQueries.length} visible queries, ${report.gapQueries.length} gaps found.`,
     openGraph: {
-      title: `${report.businessName} AI Visibility Report`,
+      title: `${name} AI Visibility Report`,
       description: `AI search visibility score: ${report.recommendationScore}/100 in ${report.city}`,
     },
   };
@@ -95,7 +106,7 @@ export default async function ReportPage({ params }: PageProps) {
               AI Visibility Report
             </p>
             <h1 className="text-3xl font-semibold tracking-tight">
-              {report.businessName}
+              {decodeHtmlEntities(report.businessName)}
             </h1>
             <p className="mt-1 text-base text-muted-foreground">
               {report.city}

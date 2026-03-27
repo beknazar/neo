@@ -18,6 +18,7 @@ export interface SavedScanReport extends NeoReport {
 export interface ScanOptions {
   competitors?: string[];
   userId?: string;
+  vertical?: string;
 }
 
 /**
@@ -34,7 +35,7 @@ export async function runScanForBusiness(
 ): Promise<SavedScanReport> {
   await ensureDb();
 
-  const queries = generateQueries(city).slice(0, queryCount);
+  const queries = generateQueries(city, options?.vertical).slice(0, queryCount);
   const results = await runQueryBatch(queries, runsPerQuery, 5);
   const scanReport = scoreResults(
     results,
@@ -43,7 +44,7 @@ export async function runScanForBusiness(
     city,
     options?.competitors ?? []
   );
-  const fullReport = await generateFixes(scanReport);
+  const fullReport = await generateFixes(scanReport, options?.vertical as Parameters<typeof generateFixes>[1]);
 
   const slug = await ensureUniqueSlug(generateSlug(businessName, city));
   const reportId = await saveReport({

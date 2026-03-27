@@ -17,6 +17,9 @@ export async function POST(request: Request) {
     const businessUrl = (body.businessUrl || "").trim().slice(0, 200);
     const city = sanitize(body.city || "", 60);
     const competitors = body.competitors;
+    const vertical: string | undefined = body.vertical
+      ? sanitize(body.vertical, 60)
+      : undefined;
 
     if (!businessName || !businessUrl || !city) {
       return NextResponse.json(
@@ -44,7 +47,7 @@ export async function POST(request: Request) {
       city,
       queryCount,
       runsPerQuery,
-      { competitors: competitors ?? [], userId: session?.user?.id }
+      { competitors: competitors ?? [], userId: session?.user?.id, vertical }
     );
 
     return NextResponse.json(report);

@@ -501,6 +501,10 @@ const FALSE_POSITIVE_DOMAINS = [
   "wordpress.com",
   "gravatar.com",
   "googleapis.com",
+  "duckduckgo.com",
+  "google.com",
+  "bing.com",
+  "yahoo.com",
 ];
 
 function isLikelyRealEmail(email: string): boolean {
