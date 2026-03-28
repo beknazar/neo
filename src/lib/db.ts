@@ -599,6 +599,9 @@ export async function saveSignupAttribution(attribution: {
 }
 
 export async function getAnalytics() {
+  // Ensure email_sends has created_at (may be missing on older schemas)
+  await query(`ALTER TABLE email_sends ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`).catch(() => {});
+
   // Ensure analytics columns exist (safe to call multiple times)
   for (const col of [
     "first_viewed_at TIMESTAMP",
