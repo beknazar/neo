@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { authClient } from "@/lib/auth-client";
 import { useRequireAuth } from "@/hooks/use-require-auth";
 import { ADMIN_EMAILS } from "@/lib/constants";
 import { AdminNav } from "@/components/admin-nav";

@@ -302,6 +302,11 @@ export async function initCampaignTables() {
     `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS unsubscribed_at TIMESTAMP`
   ).catch(() => {});
 
+  // Ensure email_sends has created_at (may be missing on older schemas)
+  await query(
+    `ALTER TABLE email_sends ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`
+  ).catch(() => {});
+
   // --- Analytics tracking tables ---
   await query(`
     CREATE TABLE IF NOT EXISTS report_views (
@@ -536,21 +541,18 @@ export async function saveReportView(view: {
   userAgent?: string;
   ipHash?: string;
 }) {
-  // Insert the view
+  // Insert view and update prospect stats in a single round-trip
   await query(
-    `INSERT INTO report_views (report_slug, visitor_id, referrer, user_agent, ip_hash)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [view.reportSlug, view.visitorId || null, view.referrer || null, view.userAgent || null, view.ipHash || null]
-  );
-
-  // Update prospect's view stats via scan_reports join
-  await query(
-    `UPDATE prospects p
+    `WITH inserted AS (
+       INSERT INTO report_views (report_slug, visitor_id, referrer, user_agent, ip_hash)
+       VALUES ($1, $2, $3, $4, $5)
+     )
+     UPDATE prospects p
      SET first_viewed_at = COALESCE(p.first_viewed_at, NOW()),
          view_count = COALESCE(p.view_count, 0) + 1
      FROM scan_reports sr
      WHERE sr.slug = $1 AND sr.id::text = p.scan_report_id::text`,
-    [view.reportSlug]
+    [view.reportSlug, view.visitorId || null, view.referrer || null, view.userAgent || null, view.ipHash || null]
   );
 }
 
@@ -599,34 +601,19 @@ export async function saveSignupAttribution(attribution: {
 }
 
 export async function getAnalytics() {
-  // Ensure email_sends has created_at (may be missing on older schemas)
-  await query(`ALTER TABLE email_sends ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`).catch(() => {});
-
-  // Ensure analytics columns exist (safe to call multiple times)
-  for (const col of [
-    "first_viewed_at TIMESTAMP",
-    "view_count INTEGER DEFAULT 0",
-    "signed_up_user_id TEXT",
-    "signed_up_at TIMESTAMP",
-    "vertical TEXT",
-  ]) {
-    const name = col.split(" ")[0];
-    await query(
-      `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS ${name} ${col.split(" ").slice(1).join(" ")}`
-    ).catch(() => {});
-  }
-
-  // Ensure analytics tables exist
-  await query(`CREATE TABLE IF NOT EXISTS report_views (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    report_slug TEXT NOT NULL, visitor_id TEXT, referrer TEXT,
-    user_agent TEXT, ip_hash TEXT, created_at TIMESTAMP DEFAULT NOW()
-  )`).catch(() => {});
-  await query(`CREATE TABLE IF NOT EXISTS signup_attributions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id TEXT NOT NULL, prospect_id UUID, report_slug TEXT,
-    referrer TEXT, created_at TIMESTAMP DEFAULT NOW()
-  )`).catch(() => {});
+  // Backfill vertical on prospects that don't have it set
+  await query(`
+    UPDATE prospects SET vertical = CASE
+      WHEN LOWER(business_name || ' ' || business_url) ~ '(med.?spa|medspa|aesthetic|botox)' THEN 'Med Spa'
+      WHEN LOWER(business_name || ' ' || business_url) ~ '(lawyer|law firm|attorney|legal)' THEN 'Lawyer'
+      WHEN LOWER(business_name || ' ' || business_url) ~ '(dentist|dental|orthodont)' THEN 'Dentist'
+      WHEN LOWER(business_name || ' ' || business_url) ~ '(real estate|realty|realtor)' THEN 'Real Estate'
+      WHEN LOWER(business_name || ' ' || business_url) ~ '(plumb)' THEN 'Plumber'
+      WHEN LOWER(business_name || ' ' || business_url) ~ '(plastic surg|cosmetic surg)' THEN 'Plastic Surgeon'
+      ELSE 'Other'
+    END
+    WHERE vertical IS NULL
+  `).catch(() => {});
 
   const [funnelResult, trendsResult, verticalResult, cityResult, recentResult] = await Promise.all([
     // Funnel counts
@@ -650,14 +637,14 @@ export async function getAnalytics() {
     `),
     // Per-vertical
     query(`
-      SELECT COALESCE(p.vertical, 'Unknown') as vertical,
+      SELECT COALESCE(p.vertical, 'Other') as vertical,
         COUNT(DISTINCT es.id) as emails_sent,
         COUNT(DISTINCT CASE WHEN p.first_viewed_at IS NOT NULL THEN p.id END) as reports_viewed,
         COUNT(DISTINCT CASE WHEN p.signed_up_at IS NOT NULL THEN p.id END) as signups
       FROM prospects p
       LEFT JOIN email_sends es ON es.prospect_id = p.id
       WHERE p.status IN ('emailed', 'signed_up')
-      GROUP BY COALESCE(p.vertical, 'Unknown')
+      GROUP BY COALESCE(p.vertical, 'Other')
       ORDER BY emails_sent DESC
     `),
     // Per-city
@@ -674,10 +661,15 @@ export async function getAnalytics() {
     `),
     // Recent views
     query(`
+      WITH slug_counts AS (
+        SELECT report_slug, COUNT(*) as view_count
+        FROM report_views GROUP BY report_slug
+      )
       SELECT rv.report_slug, sr.business_name, rv.created_at as viewed_at,
-        (SELECT COUNT(*) FROM report_views rv2 WHERE rv2.report_slug = rv.report_slug) as view_count
+        COALESCE(sc.view_count, 0) as view_count
       FROM report_views rv
       LEFT JOIN scan_reports sr ON sr.slug = rv.report_slug
+      LEFT JOIN slug_counts sc ON sc.report_slug = rv.report_slug
       ORDER BY rv.created_at DESC
       LIMIT 20
     `),

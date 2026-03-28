@@ -6,11 +6,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { usePostHog } from "posthog-js/react";
-import { authClient } from "@/lib/auth-client";
 import { useRequireAuth } from "@/hooks/use-require-auth";
 import { PROSPECT_STATUS, type ProspectStatus, ADMIN_EMAILS } from "@/lib/constants";
 import { scoreGrade, gradeClass } from "@/lib/scoring";
-import { NeoLogo } from "@/components/neo-logo";
 import { AdminNav } from "@/components/admin-nav";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -25,8 +23,6 @@ import {
   Globe,
   Building2,
   Search,
-  LogOut,
-  LayoutDashboard,
   Loader2,
   AlertCircle,
   CheckCircle2,

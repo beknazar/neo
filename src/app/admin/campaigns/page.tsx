@@ -2,11 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { authClient } from "@/lib/auth-client";
 import { useRequireAuth } from "@/hooks/use-require-auth";
 import { ADMIN_EMAILS, CAMPAIGN_STATUS } from "@/lib/constants";
-import { NeoLogo } from "@/components/neo-logo";
 import { AdminNav } from "@/components/admin-nav";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -15,9 +12,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Loader2,
-  LogOut,
-  LayoutDashboard,
-  Users,
   Plus,
   Play,
   Pause,
