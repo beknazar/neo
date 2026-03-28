@@ -92,7 +92,7 @@ export async function POST(request: Request) {
 
       const competitors = Array.isArray(parsed?.competitorMentions) ? parsed.competitorMentions : [];
       const topCompetitorName = competitors[0]?.name ?? "your top competitor";
-      const topCompetitorCount = competitors[0]?.count ?? 0;
+      const topCompetitorCount = competitors[0]?.mentionCount ?? 0;
 
       const generated = generateOutreachEmail({
         businessName: decodeHtmlEntities(prospect.business_name),
@@ -257,7 +257,7 @@ export async function PUT(request: Request) {
 
     const competitors = Array.isArray(parsed?.competitorMentions) ? parsed.competitorMentions : [];
     const topCompetitorName = competitors[0]?.name ?? "your top competitor";
-    const topCompetitorCount = competitors[0]?.count ?? 0;
+    const topCompetitorCount = competitors[0]?.mentionCount ?? 0;
 
     const generated = generateOutreachEmail({
       businessName: decodeHtmlEntities(prospect.business_name),

@@ -126,13 +126,18 @@ export function generateSubjectLine(data: OutreachEmailData): string {
 export function generateOutreachEmail(data: OutreachEmailData): GeneratedEmail {
   const subject = generateSubjectLine(data);
 
+  const competitorLine =
+    data.competitorMentions > 0
+      ? `Your top competitor (${data.topCompetitor}) is getting ${data.competitorMentions} mention${data.competitorMentions === 1 ? "" : "s"} where you're getting none.`
+      : `None of the businesses in your area are showing up consistently — there's a real opportunity to be the first one AI recommends.`;
+
   const body = `Hi,
 
 I ran an AI visibility audit on ${data.businessName} and found that you're only appearing in ${data.visibleCount} out of ${data.totalQueries} common searches people make when looking for services in ${data.city}.
 
 Your AI Recommendation Score: ${data.score}/100
 
-Your top competitor (${data.topCompetitor}) is getting ${data.competitorMentions} mentions where you're getting none.
+${competitorLine}
 
 I put together a detailed report with specific fixes:
 ${data.reportUrl}
