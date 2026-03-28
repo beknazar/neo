@@ -146,15 +146,15 @@ async function discoverBusinessesApify(
     );
 
     if (!runRes.ok) {
-      const text = await runRes.text();
-      if (runRes.status === 401 || runRes.status === 403) {
+      if (runRes.status === 401 || runRes.status === 402 || runRes.status === 403) {
         markExhausted(token);
         console.warn(
           `Apify token exhausted (${runRes.status}), ${getAvailableTokens().length} tokens remaining. Retrying...`
         );
         continue;
       }
-      throw new Error(`Apify run start failed (${runRes.status}): ${text}`);
+      const text = await runRes.text().catch(() => "unknown error");
+      throw new Error(`Apify discovery failed (${runRes.status})`);
     }
 
     const runData: ApifyRunResponse = await runRes.json();
@@ -321,7 +321,7 @@ async function discoverBusinessesFree(
 
   if (results.length === 0) {
     throw new Error(
-      "Free fallback scrapers returned no results. Try again later or wait for Apify token reset on the 1st."
+      "No businesses found. Try a different city or wait for API credits to reset on the 1st."
     );
   }
 
