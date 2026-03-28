@@ -7,6 +7,7 @@ import { authClient } from "@/lib/auth-client";
 import { useRequireAuth } from "@/hooks/use-require-auth";
 import { ADMIN_EMAILS, CAMPAIGN_STATUS } from "@/lib/constants";
 import { NeoLogo } from "@/components/neo-logo";
+import { AdminNav } from "@/components/admin-nav";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -199,37 +200,7 @@ Bek`
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-sm">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-          <NeoLogo size="xl" />
-          <div className="flex items-center gap-1">
-            <Link href="/admin/prospects">
-              <Button variant="ghost" size="sm">
-                <Users className="size-3.5" />
-                Prospects
-              </Button>
-            </Link>
-            <Link href="/dashboard">
-              <Button variant="ghost" size="sm">
-                <LayoutDashboard className="size-3.5" />
-                Dashboard
-              </Button>
-            </Link>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={async () => {
-                await authClient.signOut();
-                router.push("/");
-              }}
-              className="text-muted-foreground"
-            >
-              <LogOut className="size-3.5" />
-            </Button>
-          </div>
-        </div>
-      </header>
+      <AdminNav />
 
       <main className="mx-auto max-w-6xl px-6 py-8">
         {/* Title + Create button */}

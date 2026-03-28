@@ -301,6 +301,59 @@ export async function initCampaignTables() {
   await query(
     `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS unsubscribed_at TIMESTAMP`
   ).catch(() => {});
+
+  // --- Analytics tracking tables ---
+  await query(`
+    CREATE TABLE IF NOT EXISTS report_views (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      report_slug TEXT NOT NULL,
+      prospect_id UUID,
+      visitor_id TEXT,
+      referrer TEXT,
+      user_agent TEXT,
+      ip_hash TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `).catch(() => {});
+
+  await query(`CREATE INDEX IF NOT EXISTS idx_report_views_slug ON report_views(report_slug)`).catch(() => {});
+  await query(`CREATE INDEX IF NOT EXISTS idx_report_views_created ON report_views(created_at)`).catch(() => {});
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS report_clicks (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      report_slug TEXT NOT NULL,
+      prospect_id UUID,
+      visitor_id TEXT,
+      click_target TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `).catch(() => {});
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS signup_attributions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id TEXT NOT NULL,
+      prospect_id UUID,
+      report_slug TEXT,
+      referrer TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `).catch(() => {});
+
+  // Analytics columns on prospects
+  for (const col of [
+    "first_viewed_at TIMESTAMP",
+    "view_count INTEGER DEFAULT 0",
+    "signed_up_user_id TEXT",
+    "signed_up_at TIMESTAMP",
+    "vertical TEXT",
+  ]) {
+    const name = col.split(" ")[0];
+    await query(
+      `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS ${name} ${col.split(" ").slice(1).join(" ")}`
+    ).catch(() => {});
+  }
 }
 
 export interface CampaignRecord {
@@ -472,4 +525,171 @@ export async function isProspectUnsubscribed(prospectId: string): Promise<boolea
     [prospectId]
   );
   return result.rows[0]?.unsubscribed_at != null;
+}
+
+// --- Report View / Click Tracking ---
+
+export async function saveReportView(view: {
+  reportSlug: string;
+  visitorId?: string;
+  referrer?: string;
+  userAgent?: string;
+  ipHash?: string;
+}) {
+  // Insert the view
+  await query(
+    `INSERT INTO report_views (report_slug, visitor_id, referrer, user_agent, ip_hash)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [view.reportSlug, view.visitorId || null, view.referrer || null, view.userAgent || null, view.ipHash || null]
+  );
+
+  // Update prospect's view stats via scan_reports join
+  await query(
+    `UPDATE prospects p
+     SET first_viewed_at = COALESCE(p.first_viewed_at, NOW()),
+         view_count = COALESCE(p.view_count, 0) + 1
+     FROM scan_reports sr
+     WHERE sr.slug = $1 AND sr.id::text = p.scan_report_id::text`,
+    [view.reportSlug]
+  );
+}
+
+export async function saveReportClick(click: {
+  reportSlug: string;
+  visitorId?: string;
+  clickTarget: string;
+}) {
+  await query(
+    `INSERT INTO report_clicks (report_slug, visitor_id, click_target)
+     VALUES ($1, $2, $3)`,
+    [click.reportSlug, click.visitorId || null, click.clickTarget]
+  );
+}
+
+export async function saveSignupAttribution(attribution: {
+  userId: string;
+  reportSlug?: string;
+  referrer?: string;
+}) {
+  // Find the prospect via the report slug
+  let prospectId: string | null = null;
+  if (attribution.reportSlug) {
+    const result = await query(
+      `SELECT p.id FROM prospects p
+       JOIN scan_reports sr ON sr.id::text = p.scan_report_id::text
+       WHERE sr.slug = $1 LIMIT 1`,
+      [attribution.reportSlug]
+    );
+    prospectId = result.rows[0]?.id || null;
+  }
+
+  await query(
+    `INSERT INTO signup_attributions (user_id, prospect_id, report_slug, referrer)
+     VALUES ($1, $2, $3, $4)`,
+    [attribution.userId, prospectId, attribution.reportSlug || null, attribution.referrer || null]
+  );
+
+  // Update the prospect if found
+  if (prospectId) {
+    await query(
+      `UPDATE prospects SET signed_up_user_id = $1, signed_up_at = NOW(), status = 'signed_up' WHERE id = $2`,
+      [attribution.userId, prospectId]
+    );
+  }
+}
+
+export async function getAnalytics() {
+  const [funnelResult, trendsResult, verticalResult, cityResult, recentResult] = await Promise.all([
+    // Funnel counts
+    query(`
+      SELECT
+        (SELECT COUNT(*) FROM email_sends WHERE status = 'sent') as emails_sent,
+        (SELECT COUNT(DISTINCT p.id) FROM prospects p WHERE p.first_viewed_at IS NOT NULL) as reports_viewed,
+        (SELECT COUNT(*) FROM signup_attributions) as signups
+    `),
+    // Daily trends (last 30 days)
+    query(`
+      SELECT d.date::date,
+        COALESCE(es.cnt, 0)::int as emails_sent,
+        COALESCE(rv.cnt, 0)::int as reports_viewed,
+        COALESCE(sa.cnt, 0)::int as signups
+      FROM generate_series(CURRENT_DATE - 29, CURRENT_DATE, '1 day') d(date)
+      LEFT JOIN (SELECT DATE(created_at) as dt, COUNT(*) as cnt FROM email_sends WHERE status='sent' GROUP BY dt) es ON es.dt = d.date
+      LEFT JOIN (SELECT DATE(created_at) as dt, COUNT(*) as cnt FROM report_views GROUP BY dt) rv ON rv.dt = d.date
+      LEFT JOIN (SELECT DATE(created_at) as dt, COUNT(*) as cnt FROM signup_attributions GROUP BY dt) sa ON sa.dt = d.date
+      ORDER BY d.date
+    `),
+    // Per-vertical
+    query(`
+      SELECT COALESCE(p.vertical, 'Unknown') as vertical,
+        COUNT(DISTINCT es.id) as emails_sent,
+        COUNT(DISTINCT CASE WHEN p.first_viewed_at IS NOT NULL THEN p.id END) as reports_viewed,
+        COUNT(DISTINCT CASE WHEN p.signed_up_at IS NOT NULL THEN p.id END) as signups
+      FROM prospects p
+      LEFT JOIN email_sends es ON es.prospect_id = p.id
+      WHERE p.status IN ('emailed', 'signed_up')
+      GROUP BY COALESCE(p.vertical, 'Unknown')
+      ORDER BY emails_sent DESC
+    `),
+    // Per-city
+    query(`
+      SELECT p.city,
+        COUNT(DISTINCT es.id) as emails_sent,
+        COUNT(DISTINCT CASE WHEN p.first_viewed_at IS NOT NULL THEN p.id END) as reports_viewed,
+        COUNT(DISTINCT CASE WHEN p.signed_up_at IS NOT NULL THEN p.id END) as signups
+      FROM prospects p
+      LEFT JOIN email_sends es ON es.prospect_id = p.id
+      WHERE p.status IN ('emailed', 'signed_up')
+      GROUP BY p.city
+      ORDER BY emails_sent DESC
+    `),
+    // Recent views
+    query(`
+      SELECT rv.report_slug, sr.business_name, rv.created_at as viewed_at,
+        (SELECT COUNT(*) FROM report_views rv2 WHERE rv2.report_slug = rv.report_slug) as view_count
+      FROM report_views rv
+      LEFT JOIN scan_reports sr ON sr.slug = rv.report_slug
+      ORDER BY rv.created_at DESC
+      LIMIT 20
+    `),
+  ]);
+
+  const funnel = funnelResult.rows[0];
+  const emailsSent = parseInt(funnel.emails_sent, 10);
+  const reportsViewed = parseInt(funnel.reports_viewed, 10);
+  const signups = parseInt(funnel.signups, 10);
+
+  return {
+    funnel: {
+      emailsSent,
+      reportsViewed,
+      signups,
+      emailToViewRate: emailsSent > 0 ? Math.round((reportsViewed / emailsSent) * 100) : 0,
+      viewToSignupRate: reportsViewed > 0 ? Math.round((signups / reportsViewed) * 100) : 0,
+    },
+    dailyTrends: trendsResult.rows.map((r) => ({
+      date: r.date,
+      emails_sent: parseInt(r.emails_sent, 10),
+      reports_viewed: parseInt(r.reports_viewed, 10),
+      signups: parseInt(r.signups, 10),
+    })),
+    byVertical: verticalResult.rows.map((r) => ({
+      vertical: r.vertical,
+      emails_sent: parseInt(r.emails_sent, 10),
+      reports_viewed: parseInt(r.reports_viewed, 10),
+      signups: parseInt(r.signups, 10),
+    })),
+    byCity: cityResult.rows.map((r) => ({
+      city: r.city,
+      emails_sent: parseInt(r.emails_sent, 10),
+      reports_viewed: parseInt(r.reports_viewed, 10),
+      signups: parseInt(r.signups, 10),
+    })),
+    recentViews: recentResult.rows.map((r) => ({
+      slug: r.report_slug,
+      businessName: r.business_name,
+      viewedAt: r.viewed_at,
+      viewCount: parseInt(r.view_count, 10),
+    })),
+  };
 }

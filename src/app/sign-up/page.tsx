@@ -55,6 +55,23 @@ export default function SignUpPage() {
       return;
     }
 
+    // Fire attribution tracking
+    try {
+      const raw = localStorage.getItem("neo_attribution");
+      if (raw) {
+        const attribution = JSON.parse(raw);
+        fetch("/api/track/attribution", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reportSlug: attribution.slug, referrer: document.referrer }),
+          keepalive: true,
+        }).catch(() => {});
+        localStorage.removeItem("neo_attribution");
+      }
+    } catch {
+      // localStorage may be unavailable
+    }
+
     router.push("/dashboard");
   }
 

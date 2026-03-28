@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
 import { useRequireAuth } from "@/hooks/use-require-auth";
+import { ADMIN_EMAILS } from "@/lib/constants";
 import { scoreGrade, gradeClass, gradeBorderClass, formatDate, type Grade } from "@/lib/scoring";
 import { NeoLogo } from "@/components/neo-logo";
 import { Card, CardContent } from "@/components/ui/card";
@@ -121,6 +122,13 @@ export default function DashboardPage() {
     (NeoReport & { id: string }) | null
   >(null);
   const [loadingReportId, setLoadingReportId] = useState<string | null>(null);
+
+  // Auto-redirect admins to the admin panel
+  useEffect(() => {
+    if (session?.user?.email && ADMIN_EMAILS.has(session.user.email)) {
+      router.replace("/admin/prospects");
+    }
+  }, [session?.user?.email, router]);
 
   useEffect(() => {
     if (session?.user?.id) {

@@ -1,8 +1,6 @@
 import { getReport, getReportBySlug } from "@/lib/db";
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { NeoLogo } from "@/components/neo-logo";
 import { SCARCITY_MIN } from "@/lib/constants";
 import { type Grade, scoreGrade, gradeClass, gradeBorderClass, formatDate } from "@/lib/scoring";
@@ -18,6 +16,8 @@ import {
   Users,
   Clock,
 } from "lucide-react";
+import { ReportTracker } from "@/components/report-tracker";
+import { ReportSignupButton, ReportSignupLink } from "@/components/report-cta";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -80,12 +80,10 @@ export default async function ReportPage({ params }: PageProps) {
                 {slotsLeft} free slots left
               </Badge>
             )}
-            <Link href="/sign-up">
-              <Button size="sm">
-                Sign up free
-                <ArrowRight data-icon="inline-end" className="size-3.5" />
-              </Button>
-            </Link>
+            <ReportSignupButton slug={slug} target="signup_header" size="sm">
+              Sign up free
+              <ArrowRight data-icon="inline-end" className="size-3.5" />
+            </ReportSignupButton>
           </div>
         </div>
       </header>
@@ -106,9 +104,9 @@ export default async function ReportPage({ params }: PageProps) {
             {row.query_count && row.query_count < 25 && (
               <Badge variant="secondary" className="mt-2">
                 Lite scan ({row.query_count} queries) —
-                <Link href="/sign-up" className="ml-1 text-primary hover:underline">
+                <ReportSignupLink slug={slug} target="signup_lite" className="ml-1 text-primary hover:underline">
                   Sign up for full analysis
-                </Link>
+                </ReportSignupLink>
               </Badge>
             )}
           </div>
@@ -237,12 +235,10 @@ export default async function ReportPage({ params }: PageProps) {
                   Get specific, actionable recommendations to improve your AI
                   search visibility.
                 </p>
-                <Link href="/sign-up">
-                  <Button size="lg">
-                    Sign up to unlock
-                    <ArrowRight data-icon="inline-end" className="size-4" />
-                  </Button>
-                </Link>
+                <ReportSignupButton slug={slug} target="signup_unlock" size="lg">
+                  Sign up to unlock
+                  <ArrowRight data-icon="inline-end" className="size-4" />
+                </ReportSignupButton>
                 {slotsLeft > 0 && (
                   <p className="mt-3 text-xs text-muted-foreground">
                     Only {slotsLeft} free slots remaining
@@ -281,6 +277,8 @@ export default async function ReportPage({ params }: PageProps) {
           </div>
         </div>
       </main>
+
+      <ReportTracker slug={slug} />
     </div>
   );
 }
