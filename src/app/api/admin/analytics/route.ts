@@ -13,7 +13,9 @@ export async function GET(request: Request) {
     const analytics = await getAnalytics();
     return NextResponse.json(analytics);
   } catch (error) {
-    console.error("Analytics error:", error);
-    return NextResponse.json({ error: "Failed to load analytics" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    const code = (error as Record<string, unknown>)?.code;
+    console.error("Analytics error:", msg, "code:", code);
+    return NextResponse.json({ error: "Failed to load analytics", detail: msg, code }, { status: 500 });
   }
 }
