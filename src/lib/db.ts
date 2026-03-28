@@ -599,6 +599,32 @@ export async function saveSignupAttribution(attribution: {
 }
 
 export async function getAnalytics() {
+  // Ensure analytics columns exist (safe to call multiple times)
+  for (const col of [
+    "first_viewed_at TIMESTAMP",
+    "view_count INTEGER DEFAULT 0",
+    "signed_up_user_id TEXT",
+    "signed_up_at TIMESTAMP",
+    "vertical TEXT",
+  ]) {
+    const name = col.split(" ")[0];
+    await query(
+      `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS ${name} ${col.split(" ").slice(1).join(" ")}`
+    ).catch(() => {});
+  }
+
+  // Ensure analytics tables exist
+  await query(`CREATE TABLE IF NOT EXISTS report_views (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    report_slug TEXT NOT NULL, visitor_id TEXT, referrer TEXT,
+    user_agent TEXT, ip_hash TEXT, created_at TIMESTAMP DEFAULT NOW()
+  )`).catch(() => {});
+  await query(`CREATE TABLE IF NOT EXISTS signup_attributions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id TEXT NOT NULL, prospect_id UUID, report_slug TEXT,
+    referrer TEXT, created_at TIMESTAMP DEFAULT NOW()
+  )`).catch(() => {});
+
   const [funnelResult, trendsResult, verticalResult, cityResult, recentResult] = await Promise.all([
     // Funnel counts
     query(`
