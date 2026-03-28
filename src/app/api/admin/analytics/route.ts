@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
-import { getAnalytics } from "@/lib/db";
+import { ensureDb, getAnalytics } from "@/lib/db";
 
 export async function GET(request: Request) {
   const adminCheck = await requireAdmin(request);
@@ -9,6 +9,7 @@ export async function GET(request: Request) {
   }
 
   try {
+    await ensureDb();
     const analytics = await getAnalytics();
     return NextResponse.json(analytics);
   } catch (error) {

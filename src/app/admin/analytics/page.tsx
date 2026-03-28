@@ -70,7 +70,7 @@ export default function AnalyticsPage() {
     if (!isAdmin) return;
     fetch("/api/admin/analytics")
       .then((r) => r.json())
-      .then(setData)
+      .then((d) => { if (d.funnel) setData(d); })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [isAdmin]);

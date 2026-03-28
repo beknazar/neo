@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createHash } from "crypto";
-import { saveReportView, saveReportClick } from "@/lib/db";
+import { ensureDb, saveReportView, saveReportClick } from "@/lib/db";
 
 const BOT_PATTERN = /bot|crawl|spider|slurp|mediapartners|facebookexternalhit|bingpreview|googlebot/i;
 
@@ -12,6 +12,8 @@ export async function POST(request: Request) {
     if (!event || !slug) {
       return NextResponse.json({ ok: false }, { status: 400 });
     }
+
+    await ensureDb();
 
     const userAgent = request.headers.get("user-agent") || "";
     if (BOT_PATTERN.test(userAgent)) {

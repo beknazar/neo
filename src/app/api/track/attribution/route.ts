@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { saveSignupAttribution } from "@/lib/db";
+import { ensureDb, saveSignupAttribution } from "@/lib/db";
 
 export async function POST(request: Request) {
   try {
@@ -9,6 +9,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    await ensureDb();
     const body = await request.json();
     const { reportSlug, referrer } = body;
 
