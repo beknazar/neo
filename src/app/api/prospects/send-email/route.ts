@@ -22,6 +22,31 @@ export const maxDuration = 120;
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildEmailFromReport(reportData: any, prospect: any, reportUrl: string, slotsLeft: number) {
+  const parsed = reportData?.report_data
+    ? typeof reportData.report_data === "string"
+      ? JSON.parse(reportData.report_data)
+      : reportData.report_data
+    : null;
+
+  const competitors = Array.isArray(parsed?.competitorMentions) ? parsed.competitorMentions : [];
+
+  return generateOutreachEmail({
+    businessName: decodeHtmlEntities(prospect.business_name),
+    city: prospect.city,
+    score: parsed?.recommendationScore ?? 0,
+    visibleCount: parsed?.strongQueries?.length ?? 0,
+    totalQueries:
+      (parsed?.strongQueries?.length ?? 0) +
+      (parsed?.gapQueries?.length ?? 0) || 25,
+    topCompetitor: competitors[0]?.name ?? "your top competitor",
+    competitorMentions: competitors[0]?.mentionCount ?? 0,
+    reportUrl,
+    slotsLeft,
+  });
+}
+
 // In-memory lock to prevent concurrent scans for the same prospect
 const scanningProspects = new Set<string>();
 
@@ -84,29 +109,7 @@ export async function POST(request: Request) {
         ? `${APP_URL}/report/${prospect.scan_report_id}`
         : APP_URL;
 
-      const parsed = reportData?.report_data
-        ? typeof reportData.report_data === "string"
-          ? JSON.parse(reportData.report_data)
-          : reportData.report_data
-        : null;
-
-      const competitors = Array.isArray(parsed?.competitorMentions) ? parsed.competitorMentions : [];
-      const topCompetitorName = competitors[0]?.name ?? "your top competitor";
-      const topCompetitorCount = competitors[0]?.mentionCount ?? 0;
-
-      const generated = generateOutreachEmail({
-        businessName: decodeHtmlEntities(prospect.business_name),
-        city: prospect.city,
-        score: parsed?.recommendationScore ?? 0,
-        visibleCount: parsed?.strongQueries?.length ?? 0,
-        totalQueries:
-          (parsed?.strongQueries?.length ?? 0) +
-          (parsed?.gapQueries?.length ?? 0) || 25,
-        topCompetitor: topCompetitorName,
-        competitorMentions: topCompetitorCount,
-        reportUrl,
-        slotsLeft,
-      });
+      const generated = buildEmailFromReport(reportData, prospect, reportUrl, slotsLeft);
 
       subject = subject || generated.subject;
       emailBody = emailBody || generated.body;
@@ -249,29 +252,7 @@ export async function PUT(request: Request) {
       ? `${APP_URL}/report/${scanReportId}`
       : APP_URL;
 
-    const parsed = reportData?.report_data
-      ? typeof reportData.report_data === "string"
-        ? JSON.parse(reportData.report_data)
-        : reportData.report_data
-      : null;
-
-    const competitors = Array.isArray(parsed?.competitorMentions) ? parsed.competitorMentions : [];
-    const topCompetitorName = competitors[0]?.name ?? "your top competitor";
-    const topCompetitorCount = competitors[0]?.mentionCount ?? 0;
-
-    const generated = generateOutreachEmail({
-      businessName: decodeHtmlEntities(prospect.business_name),
-      city: prospect.city,
-      score: parsed?.recommendationScore ?? 0,
-      visibleCount: parsed?.strongQueries?.length ?? 0,
-      totalQueries:
-        (parsed?.strongQueries?.length ?? 0) +
-        (parsed?.gapQueries?.length ?? 0) || 25,
-      topCompetitor: topCompetitorName,
-      competitorMentions: topCompetitorCount,
-      reportUrl,
-      slotsLeft,
-    });
+    const generated = buildEmailFromReport(reportData, prospect, reportUrl, slotsLeft);
 
     return NextResponse.json({
       to: prospect.email,
